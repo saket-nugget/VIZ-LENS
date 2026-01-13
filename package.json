@@ -1,0 +1,26 @@
+{
+  "name": "viz-lens",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/saket-nugget/VIZ-LENS.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/saket-nugget/VIZ-LENS/issues"
+  },
+  "homepage": "https://github.com/saket-nugget/VIZ-LENS#readme",
+  "description": "",
+  "dependencies": {
+    "@google/genai": "^1.35.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1"
+  }
+}
