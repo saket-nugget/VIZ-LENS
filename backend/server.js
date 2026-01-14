@@ -72,7 +72,7 @@ Question: ${query}
 Generate a complete HTML page with inline CSS and JavaScript. Make it visually appealing and educational.`;
 
         const response = await client.models.generateContent({
-            model: 'models/gemini-2.5-flash',
+            model: 'gemini-3-flash-preview',
             contents: systemPrompt
         });
 
@@ -103,6 +103,128 @@ Generate a complete HTML page with inline CSS and JavaScript. Make it visually a
 
         console.error("Gemini API Error Details:", JSON.stringify(error, null, 2));
         res.status(500).json({ error: "Failed to generate visualization", details: error.message });
+    }
+});
+
+// Quiz Generation Route
+app.post('/api/quiz', async (req, res) => {
+    try {
+        const { topic } = req.body;
+
+        if (!topic) {
+            return res.status(400).json({ error: "Topic is required" });
+        }
+
+        const quizPrompt = `Generate 3 multiple-choice questions to test the user's understanding of: ${topic}.
+        
+        CRITICAL OUTPUT RULES:
+        - Output ONLY valid JSON.
+        - Do not include markdown formatting (like \`\`\`json).
+        - Structure:
+        [
+            {
+                "question": "Question text here?",
+                "options": ["Option A", "Option B", "Option C", "Option D"],
+                "correctAnswer": "Option A",
+                "explanation": "Why this is correct."
+            }
+        ]
+        `;
+
+        const response = await client.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: quizPrompt,
+            config: {
+                responseMimeType: 'application/json'
+            }
+        });
+
+        let quizData = [];
+        try {
+            // Handle potential markdown wrapping or raw text
+            let text = "";
+            if (typeof response.text === 'function') {
+                text = response.text();
+            } else if (response.candidates && response.candidates.length > 0) {
+                text = response.candidates[0].content.parts[0].text;
+            } else if (response.text) {
+                text = response.text;
+            }
+
+            // Clean markdown if present
+            text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+            quizData = JSON.parse(text);
+
+        } catch (e) {
+            console.error("Failed to parse quiz JSON:", e);
+            return res.status(500).json({ error: "Failed to parse quiz data" });
+        }
+
+        res.json({ quiz: quizData });
+
+    } catch (error) {
+        console.error("Quiz API Error:", error);
+        res.status(500).json({ error: "Failed to generate quiz", details: error.message });
+    }
+});
+
+// Judge/Compiler Route
+app.post('/api/judge', async (req, res) => {
+    try {
+        const { code, language, topic } = req.body;
+
+        if (!code || !topic) {
+            return res.status(400).json({ error: "Code and Topic are required" });
+        }
+
+        const judgePrompt = `You are an AI Code Judge and Tutor. The user has written code for: ${topic}.
+        
+        User's Code (${language || 'javascript'}):
+        ${code}
+
+        CRITICAL OUTPUT RULES:
+        - Analyze the code for correctness, efficiency, and style.
+        - Output ONLY valid JSON.
+        - Structure:
+        {
+            "passed": true/false,
+            "feedback": "Short explanation of what is right or wrong.",
+            "optimizationTips": "One tip to improve the code (optional)."
+        }
+        `;
+
+        const response = await client.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: judgePrompt,
+            config: {
+                responseMimeType: 'application/json'
+            }
+        });
+
+        let judgeData = {};
+        try {
+            let text = "";
+            if (typeof response.text === 'function') {
+                text = response.text();
+            } else if (response.candidates && response.candidates.length > 0) {
+                text = response.candidates[0].content.parts[0].text;
+            } else if (response.text) {
+                text = response.text;
+            }
+
+            text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+            judgeData = JSON.parse(text);
+
+        } catch (e) {
+            console.error("Failed to parse judge JSON:", e);
+            return res.status(500).json({ error: "Failed to parse judge data" });
+        }
+
+        res.json({ result: judgeData });
+
+    } catch (error) {
+        console.error("Judge API Error:", error);
+        res.status(500).json({ error: "Failed to judge code", details: error.message });
     }
 });
 
