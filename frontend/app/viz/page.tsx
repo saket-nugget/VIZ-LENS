@@ -3,12 +3,15 @@
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import Visualizer from "../components/visualizer";
+import Quiz from "../components/Quiz";
+import CodeJudge from "../components/CodeJudge";
 
 export default function VizPage() {
   const searchParams = useSearchParams();
   const [html, setHtml] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [showJudge, setShowJudge] = useState(false);
 
   useEffect(() => {
     const query = searchParams.get("q");
@@ -79,6 +82,17 @@ export default function VizPage() {
         🏠︎
       </button>
       <Visualizer html={html} />
+
+      <div className="container mx-auto px-4 pb-20">
+        {!showJudge ? (
+          <Quiz
+            topic={searchParams.get("q") || ""}
+            onComplete={() => setShowJudge(true)}
+          />
+        ) : (
+          <CodeJudge topic={searchParams.get("q") || ""} />
+        )}
+      </div>
     </div>
   );
 }
