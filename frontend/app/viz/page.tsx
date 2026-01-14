@@ -20,7 +20,8 @@ export default function VizPage() {
 
     const fetchVisualization = async () => {
       try {
-        const response = await fetch("/api/generate", {
+        // Call the Express Backend (Option 2)
+        const response = await fetch("http://localhost:3000/api/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query }),
