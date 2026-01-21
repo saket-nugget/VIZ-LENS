@@ -13,6 +13,8 @@ export default function VizPage() {
   const [error, setError] = useState("");
   const [showJudge, setShowJudge] = useState(false);
 
+
+
   useEffect(() => {
     const query = searchParams.get("q");
     if (!query) {
@@ -20,6 +22,10 @@ export default function VizPage() {
       setLoading(false);
       return;
     }
+
+    // Prevent double-fetch in React Strict Mode
+    // if (query === lastQuery.current) return;
+    // lastQuery.current = query;
 
     const fetchVisualization = async () => {
       try {

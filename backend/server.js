@@ -8,7 +8,76 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Initialize Gemini
-const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+// Initialize Gemini
+// Initialize Gemini Keys
+const apiKeys = [
+    process.env.GEMINI_API_KEY_1,
+    process.env.GEMINI_API_KEY_2,
+    process.env.GEMINI_API_KEY_3,
+    process.env.GEMINI_API_KEY_4,
+    process.env.GEMINI_API_KEY
+].filter(key => key && key.trim() !== '');
+
+const uniqueKeys = [...new Set(apiKeys)];
+
+if (uniqueKeys.length === 0) {
+    console.error("CRITICAL ERROR: No Gemini API keys found in .env file!");
+    // We don't exit here to allow the server to start, but requests will fail.
+} else {
+    console.log(`Loaded ${uniqueKeys.length} unique Gemini API keys.`);
+}
+
+let currentKeyIndex = 0;
+
+function getClient() {
+    if (uniqueKeys.length === 0) {
+        throw new Error("No API keys available.");
+    }
+    const key = uniqueKeys[currentKeyIndex];
+    console.log(`[DEBUG] Using Key: ${key.substring(0, 10)}...`);
+    return new GoogleGenAI({ apiKey: key });
+}
+
+function rotateKey() {
+    if (uniqueKeys.length <= 1) return; // No point rotating if only 1 key
+    currentKeyIndex = (currentKeyIndex + 1) % uniqueKeys.length;
+    console.log(`Rate Limit Hit. Rotating to API Key Index: ${currentKeyIndex}`);
+}
+
+async function generateWithRetry(modelName, prompt, config = {}) {
+    let attempts = 0;
+    const maxAttempts = Math.max(1, uniqueKeys.length);
+
+    while (attempts < maxAttempts) {
+        try {
+            const client = getClient();
+            const response = await client.models.generateContent({
+                model: modelName,
+                contents: prompt,
+                config: config
+            });
+            return response;
+        } catch (error) {
+            console.log(`[DEBUG] Attempt ${attempts + 1} failed. Error Status: ${error.status}, Message: ${error.message}`);
+
+            // Check for 429 (Rate Limit) or 503 (Service Unavailable)
+            // Also check if the message string contains "429" or "quota"
+            const isRateLimit = error.status === 429 ||
+                (error.message && (error.message.includes('429') || error.message.includes('quota'))) ||
+                (error.toString && (error.toString().includes('429') || error.toString().includes('quota')));
+
+            if (isRateLimit) {
+                console.warn(`Quota exceeded for key index ${currentKeyIndex}. Rotating...`);
+                rotateKey();
+                attempts++;
+            } else {
+                console.error("Non-retriable error encountered:", error);
+                throw error; // Re-throw other errors immediately
+            }
+        }
+    }
+    throw new Error(`All ${uniqueKeys.length} API keys have exhausted their quota.`);
+}
 
 // Middleware
 app.use(cors());
@@ -71,37 +140,29 @@ Question: ${query}
 
 Generate a complete HTML page with inline CSS and JavaScript. Make it visually appealing and educational.`;
 
-        const response = await client.models.generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: systemPrompt
-        });
+        const response = await generateWithRetry('gemini-3-pro-preview', systemPrompt);
 
-        // Debugging: Log the response structure to understand why .text() fails
-        const fs = require('fs');
-        fs.appendFileSync('error.log', `\n[DEBUG Response]: ${JSON.stringify(response, null, 2)}\n`);
-
-        // Try to handle different response structures
         let html = "";
-        if (typeof response.text === 'function') {
-            html = response.text();
-        } else if (response.candidates && response.candidates.length > 0) {
-            // Raw API structure
+        // Prioritize candidates array as seen in logs
+        if (response.candidates && response.candidates.length > 0 && response.candidates[0].content && response.candidates[0].content.parts && response.candidates[0].content.parts.length > 0) {
             html = response.candidates[0].content.parts[0].text;
+        } else if (typeof response.text === 'function') {
+            html = response.text();
         } else if (response.text) {
-            // Maybe it's a property?
             html = response.text;
         } else {
-            throw new Error("Unknown response structure");
+            throw new Error("Unknown response structure: " + JSON.stringify(response));
         }
 
         res.json({ html });
 
     } catch (error) {
-        const fs = require('fs');
-        const errorLog = `\n[${new Date().toISOString()}] Error: ${error.message}\nDetails: ${JSON.stringify(error, null, 2)}\n`;
-        fs.appendFileSync('error.log', errorLog);
-
         console.error("Gemini API Error Details:", JSON.stringify(error, null, 2));
+
+        if (error.status === 429 || (error.message && (error.message.includes('429') || error.message.includes('quota') || error.message.includes('exhausted')))) {
+            return res.status(429).json({ error: "Gemini API Quota Exceeded: All keys exhausted.", details: error.message });
+        }
+
         res.status(500).json({ error: "Failed to generate visualization", details: error.message });
     }
 });
@@ -131,22 +192,17 @@ app.post('/api/quiz', async (req, res) => {
         ]
         `;
 
-        const response = await client.models.generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: quizPrompt,
-            config: {
-                responseMimeType: 'application/json'
-            }
+        const response = await generateWithRetry('gemini-3-pro-preview', quizPrompt, {
+            responseMimeType: 'application/json'
         });
 
         let quizData = [];
         try {
-            // Handle potential markdown wrapping or raw text
             let text = "";
-            if (typeof response.text === 'function') {
-                text = response.text();
-            } else if (response.candidates && response.candidates.length > 0) {
+            if (response.candidates && response.candidates.length > 0 && response.candidates[0].content && response.candidates[0].content.parts && response.candidates[0].content.parts.length > 0) {
                 text = response.candidates[0].content.parts[0].text;
+            } else if (typeof response.text === 'function') {
+                text = response.text();
             } else if (response.text) {
                 text = response.text;
             }
@@ -164,6 +220,9 @@ app.post('/api/quiz', async (req, res) => {
 
     } catch (error) {
         console.error("Quiz API Error:", error);
+        if (error.status === 429 || (error.message && (error.message.includes('429') || error.message.includes('quota') || error.message.includes('exhausted')))) {
+            return res.status(429).json({ error: "Gemini API Quota Exceeded", details: error.message });
+        }
         res.status(500).json({ error: "Failed to generate quiz", details: error.message });
     }
 });
@@ -193,21 +252,17 @@ app.post('/api/judge', async (req, res) => {
         }
         `;
 
-        const response = await client.models.generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: judgePrompt,
-            config: {
-                responseMimeType: 'application/json'
-            }
+        const response = await generateWithRetry('gemini-3-pro-preview', judgePrompt, {
+            responseMimeType: 'application/json'
         });
 
         let judgeData = {};
         try {
             let text = "";
-            if (typeof response.text === 'function') {
-                text = response.text();
-            } else if (response.candidates && response.candidates.length > 0) {
+            if (response.candidates && response.candidates.length > 0 && response.candidates[0].content && response.candidates[0].content.parts && response.candidates[0].content.parts.length > 0) {
                 text = response.candidates[0].content.parts[0].text;
+            } else if (typeof response.text === 'function') {
+                text = response.text();
             } else if (response.text) {
                 text = response.text;
             }
@@ -224,6 +279,9 @@ app.post('/api/judge', async (req, res) => {
 
     } catch (error) {
         console.error("Judge API Error:", error);
+        if (error.status === 429 || (error.message && (error.message.includes('429') || error.message.includes('quota') || error.message.includes('exhausted')))) {
+            return res.status(429).json({ error: "Gemini API Quota Exceeded", details: error.message });
+        }
         res.status(500).json({ error: "Failed to judge code", details: error.message });
     }
 });
