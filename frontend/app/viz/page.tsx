@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Visualizer from "../components/visualizer";
 import Quiz from "../components/Quiz";
 import CodeJudge from "../components/CodeJudge";
@@ -12,7 +12,7 @@ export default function VizPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showJudge, setShowJudge] = useState(false);
-
+  const lastQuery = useRef<string | null>(null);
 
 
   useEffect(() => {
@@ -24,8 +24,8 @@ export default function VizPage() {
     }
 
     // Prevent double-fetch in React Strict Mode
-    // if (query === lastQuery.current) return;
-    // lastQuery.current = query;
+    if (query === lastQuery.current) return;
+    lastQuery.current = query;
 
     const fetchVisualization = async () => {
       try {

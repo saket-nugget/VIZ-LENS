@@ -136,7 +136,7 @@ Question: ${query}
 
 Generate a complete HTML page with inline CSS and JavaScript. Make it visually appealing and educational.`;
 
-        const response = await generateWithRetry('gemini-3-pro-preview', systemPrompt);
+        const response = await generateWithRetry('gemini-3-flash-preview', systemPrompt);
 
         let html = "";
         // Prioritize candidates array as seen in logs
@@ -188,7 +188,7 @@ app.post('/api/quiz', async (req, res) => {
         ]
         `;
 
-        const response = await generateWithRetry('gemini-3-pro-preview', quizPrompt, {
+        const response = await generateWithRetry('gemini-3-flash-preview', quizPrompt, {
             responseMimeType: 'application/json'
         });
 
@@ -248,7 +248,7 @@ app.post('/api/judge', async (req, res) => {
         }
         `;
 
-        const response = await generateWithRetry('gemini-3-pro-preview', judgePrompt, {
+        const response = await generateWithRetry('gemini-3-flash-preview', judgePrompt, {
             responseMimeType: 'application/json'
         });
 
