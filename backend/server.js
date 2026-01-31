@@ -104,37 +104,43 @@ app.post('/api/generate', async (req, res) => {
             return res.status(400).json({ error: "Query is required" });
         }
 
-        const systemPrompt = `You are VIZ-LENS Master Engine. Generate interactive HTML5 visualizations that transform code/math/data problems into intuitive learning experiences.
+        const systemPrompt = `**Role:** You are the VIZ-LENS Master Engine. You generate "AI-Native" Interactive Intuition Engines. You transform Code, Math, or Data into a premium, responsive HTML5 application.
 
-CRITICAL EXECUTION RULES:
-- Output ONLY raw HTML code (no markdown, no explanations)
-- Use literal characters in <script> tags: ", <, > (NEVER &quot; &lt; &gt;)
-- Use ONLY Vanilla JS and HTML5 Canvas (no external libraries)
-- Make it fully self-contained and functional
+**[TARGET INPUT]**
+Topic / Problem to visualize: ${query}
 
-MANDATORY UI COMPONENTS:
-1. Header & Stats Panel: Display live variables and current state metrics
-2. Dynamic Canvas: Responsive visualization area using HTML5 Canvas
-3. Interactive Controls:
-   - Step buttons (Next/Prev)
-   - Play/Pause for auto-animation
-   - Progress slider synced to steps
-4. Intuition Box: Monospace text explaining the "why" of each step
+**[CRITICAL: EXECUTION SAFETY]**
+- Output ONLY the raw HTML code.
+- NO MARKDOWN, NO EXPLANATIONS.
+- NO HTML ENTITIES: Use literal quotes (") and symbols (<, >) in <script>. If you output &quot;, the app fails.
+- NO EXTERNAL LIBS: Use Vanilla JS and HTML5 Canvas for all animations.
 
-INTERACTIVE INPUT LAB:
-- Include input field/textarea for custom user data
-- "Generate Visualization" button
-- On click: parse input, regenerate state.steps array, redraw canvas instantly
+**[MANDATORY UI ARCHITECTURE]**
+Every file MUST include these four sections exactly:
+1. **Header & Stats:** Display live variables (e.g., "Current Min", "Max Profit").
+2. **Dynamic Canvas:** A responsive area for the visualization.
+3. **Interactive Control Bar:**
+   - "Next" / "Prev" buttons to step through logic.
+   - "Play / Pause" for auto-animation.
+   - A "Progress Slider" synced to the steps.
+4. **Intuition Box:** A #description-box that explains the "Why" of the current step in monospace font.
 
-DESIGN SYSTEM:
-- Theme: Dark slate (#0f172a) with glassmorphism effects
-- Colors: Blue (#00d1ff) for pointers, Green (#22c55e) for success, Red (#ef4444) for errors
-- Canvas: Use ctx.save()/restore(), employ bar charts/trees/graphs as appropriate
-- Focus on critical logical junctions to enhance active learning
+**[NEW FEATURE: INTERACTIVE INPUT LAB]**
+- Include an <input type="text"> or <textarea> where the user can provide custom data.
+- Include a "Generate Visualization" button that parses new input and re-generates the state.steps and Canvas layout instantly.
 
-Question: ${query}
+**[QUIZ HANDOFF]**
+- Include a <button id="take-quiz-btn">Take the Quiz</button> that activates only at the final step.
+- Action: window.parent.postMessage("START_QUIZ", "*");
 
-Generate a complete HTML page with inline CSS and JavaScript. Make it visually appealing and educational.`;
+**[VISUAL & LOGIC RULES]**
+- Theme: Dark Slate (#0f172a) with Glassmorphism.
+- Colors: Primary Blue (#00d1ff) for pointers, Success Green (#22c55e) for positive results, Danger Red (#ef4444) for conflicts.
+- Canvas Logic: Use ctx.save() and ctx.restore(). Use bar charts, trees, or coordinate planes based on the topic.
+
+**[OUTPUT REQUIREMENT]**
+Return a complete, self-contained HTML document with inline CSS + inline JS.`;
+
 
         const response = await generateWithRetry('gemini-3-flash-preview', systemPrompt);
 
@@ -172,21 +178,43 @@ app.post('/api/quiz', async (req, res) => {
             return res.status(400).json({ error: "Topic is required" });
         }
 
-        const quizPrompt = `Generate 3 multiple-choice questions to test the user's understanding of: ${topic}.
-        
-        CRITICAL OUTPUT RULES:
-        - Output ONLY valid JSON.
-        - Do not include markdown formatting (like \`\`\`json).
-        - Structure:
-        [
-            {
-                "question": "Question text here?",
-                "options": ["Option A", "Option B", "Option C", "Option D"],
-                "correctAnswer": "Option A",
-                "explanation": "Why this is correct."
-            }
-        ]
-        `;
+        const quizPrompt = `Role: You are the VIZ-LENS Quizmaster.
+Generate a premium, readable, conceptual quiz that matches the VIZ-LENS dark-glass UI.
+
+TARGET TOPIC:
+${topic}
+
+RULES:
+- Output STRICT JSON ONLY (no markdown, no backticks, no extra text).
+- Generate EXACTLY 5 questions.
+- Each question MUST have exactly 4 options.
+- correctAnswer MUST be the EXACT option string (must match one of the options).
+- Keep questions concise (<= 140 chars).
+- Keep each option concise (<= 70 chars).
+- Keep explanation helpful but short (<= 220 chars).
+- Avoid overly academic wording; keep it crisp and intuitive.
+- Make distractor options plausible (not silly).
+
+QUESTION TYPES (in order):
+1) Identify a key variable/state used by the algorithm.
+2) Predict the next step / next state change.
+3) What-if input changes (best/worst/duplicate/edge).
+4) Time/space complexity reasoning.
+5) Edge case handling (empty input, bounds, duplicates, already-sorted, etc.)
+
+OUTPUT JSON SCHEMA:
+{
+  "questions": [
+    {
+      "question": "string",
+      "options": ["string", "string", "string", "string"],
+      "correctAnswer": "string",
+      "explanation": "string"
+    }
+  ]
+}`;
+
+
 
         const response = await generateWithRetry('gemini-3-flash-preview', quizPrompt, {
             responseMimeType: 'application/json'
@@ -232,21 +260,32 @@ app.post('/api/judge', async (req, res) => {
             return res.status(400).json({ error: "Code and Topic are required" });
         }
 
-        const judgePrompt = `You are an AI Code Judge and Tutor. The user has written code for: ${topic}.
-        
-        User's Code (${language || 'javascript'}):
-        ${code}
+        const judgePrompt = `**Role:** You are the VIZ-LENS Logic Judge. Your task is to provide pinpoint educational feedback on code logic.
 
-        CRITICAL OUTPUT RULES:
-        - Analyze the code for correctness, efficiency, and style.
-        - Output ONLY valid JSON.
-        - Structure:
-        {
-            "passed": true/false,
-            "feedback": "Short explanation of what is right or wrong.",
-            "optimizationTips": "One tip to improve the code (optional)."
-        }
-        `;
+**[TARGET PROBLEM]**
+Algorithm / Concept: ${topic}
+
+**[CONTEXT]**
+- Programming Language: ${language}
+
+**User Code (line numbers matter):**
+${code}
+
+**[TASK]**
+Compare the User's Code against the correct logical steps of the algorithm.
+
+1. Identify the FIRST line number where the logic deviates from the correct implementation.
+2. If the code is 100% correct, set "error_line" to 0.
+3. Explain *why* the logic is wrong using visualization-based intuition (e.g., pointer movement, bars, nodes, state transitions).
+
+**[OUTPUT FORMAT — STRICT JSON ONLY]**
+DO NOT include explanations, markdown, or commentary outside JSON.
+{
+  "error_line": number,
+  "reason": "string",
+  "visual_reference": "string"
+}`;
+
 
         const response = await generateWithRetry('gemini-3-flash-preview', judgePrompt, {
             responseMimeType: 'application/json'

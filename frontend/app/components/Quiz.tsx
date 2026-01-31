@@ -3,11 +3,13 @@
 import { useState, useEffect } from "react";
 
 interface Question {
-    question: string;
-    options: string[];
-    correctAnswer: string;
-    explanation: string;
+  question: string;
+  options: string[];
+  correctAnswer?: string;   // allow optional
+  correctIndex?: number;    // allow optional
+  explanation: string;
 }
+
 
 interface QuizProps {
     topic: string;
@@ -24,6 +26,14 @@ export default function Quiz({ topic, onComplete }: QuizProps) {
     const [quizCompleted, setQuizCompleted] = useState(false);
 
     useEffect(() => {
+        setLoading(true);
+setQuestions([]);
+setCurrentQuestion(0);
+setScore(0);
+setShowExplanation(false);
+setSelectedOption(null);
+setQuizCompleted(false);
+
         const fetchQuiz = async () => {
             try {
                 const res = await fetch("http://localhost:3000/api/quiz", {
@@ -32,9 +42,16 @@ export default function Quiz({ topic, onComplete }: QuizProps) {
                     body: JSON.stringify({ topic }),
                 });
                 const data = await res.json();
-                if (data.quiz) {
-                    setQuestions(data.quiz);
-                }
+
+const questionsArr = data?.quiz?.questions;
+if (Array.isArray(questionsArr)) {
+  setQuestions(questionsArr);
+} else {
+  console.error("Invalid quiz format:", data);
+  setQuestions([]);
+}
+
+
             } catch (error) {
                 console.error("Failed to load quiz", error);
             } finally {
@@ -50,7 +67,7 @@ export default function Quiz({ topic, onComplete }: QuizProps) {
         setSelectedOption(option);
         setShowExplanation(true);
 
-        if (option === questions[currentQuestion].correctAnswer) {
+        if (option === correct){
             setScore(score + 1);
         }
     };
@@ -67,24 +84,36 @@ export default function Quiz({ topic, onComplete }: QuizProps) {
     };
 
     if (loading) return <div className="text-white animate-pulse">Loading Quiz...</div>;
-    if (questions.length === 0) return <div className="text-red-400">Failed to load quiz.</div>;
+if (questions.length === 0) return <div className="text-red-400">Failed to load quiz.</div>;
 
-    if (quizCompleted) {
-        return (
-            <div className="bg-white/5 p-6 rounded-xl border border-white/10 text-center">
-                <h3 className="text-2xl font-bold text-white mb-4">Quiz Completed! 🎉</h3>
-                <p className="text-gray-300 mb-4">You scored {score} out of {questions.length}</p>
-                <button
-                    onClick={onComplete}
-                    className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
-                >
-                    Proceed to Code Challenge
-                </button>
-            </div>
-        );
-    }
+const q = questions[currentQuestion];
+const correct =
+  typeof q.correctAnswer === "string"
+    ? q.correctAnswer
+    : typeof q.correctIndex === "number"
+      ? q.options[q.correctIndex]
+      : undefined;
+if (!q) {
+    return <div className="text-red-400">Quiz data is invalid.</div>;
+}
 
-    const q = questions[currentQuestion];
+if (quizCompleted) {
+    return (
+        <div className="bg-white/5 p-6 rounded-xl border border-white/10 text-center">
+            <h3 className="text-2xl font-bold text-white mb-4">Quiz Completed! 🎉</h3>
+            <p className="text-gray-300 mb-4">
+                You scored {score} out of {questions.length}
+            </p>
+            <button
+                onClick={onComplete}
+                className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
+            >
+                Proceed to Code Challenge
+            </button>
+        </div>
+    );
+}
+
 
     return (
         <div className="bg-white/5 p-6 rounded-xl border border-white/10 max-w-2xl w-full mx-auto mt-8">
@@ -103,12 +132,12 @@ export default function Quiz({ topic, onComplete }: QuizProps) {
                         disabled={!!selectedOption}
                         className={`w-full text-left p-4 rounded-lg border transition-all duration-200
               ${selectedOption === option
-                                ? option === q.correctAnswer
+                                ? option === correct
                                     ? "bg-green-500/20 border-green-500 text-green-200"
                                     : "bg-red-500/20 border-red-500 text-red-200"
                                 : "bg-white/5 border-white/10 text-gray-300 hover:bg-white/10"
                             }
-              ${selectedOption && option === q.correctAnswer ? "bg-green-500/20 border-green-500 text-green-200" : ""}
+              ${selectedOption && option === correct ? "bg-green-500/20 border-green-500 text-green-200" : ""}
             `}
                     >
                         {option}

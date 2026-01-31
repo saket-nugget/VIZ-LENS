@@ -45,11 +45,16 @@ export default function VizPage() {
         console.log("HTML received:", data.html);
         setHtml(data.html);
         setLoading(false);
-      } catch (err: any) {
-        console.error(err);
-        setError(err.message);
-        setLoading(false);
-      }
+      } catch (err: unknown) {
+  console.error(err);
+
+  const message =
+    err instanceof Error ? err.message : "Something went wrong";
+
+  setError(message);
+  setLoading(false);
+}
+
     };
 
     fetchVisualization();
@@ -72,7 +77,7 @@ export default function VizPage() {
   }
 
   return (
-    <div className="w-full h-screen bg-[#0D1117]">
+    <div className="w-full min-h-screen bg-[#0D1117]">
       <button
         onClick={() => window.history.back()}
         className="absolute top-6 left-6 z-10 
