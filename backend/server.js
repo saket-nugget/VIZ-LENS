@@ -54,7 +54,15 @@ async function generateWithRetry(modelName, prompt, config = {}) {
             const response = await client.models.generateContent({
                 model: modelName,
                 contents: prompt,
-                config: config
+                config: {
+                    ...config,
+                    safetySettings: [
+                        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+                        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+                        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+                        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+                    ]
+                }
             });
             return response;
         } catch (error) {
