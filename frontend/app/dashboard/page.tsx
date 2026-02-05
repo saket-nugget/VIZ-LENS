@@ -21,6 +21,8 @@ import { motion } from "framer-motion";
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend, ArcElement);
 
 // --- Types ---
+const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3000";
+
 interface DashboardData {
     snapshot: {
         title: string;
@@ -65,7 +67,7 @@ export default function DashboardPage() {
         formData.append("file", selectedFile);
 
         try {
-            const res = await fetch("http://localhost:3000/api/upload-dataset", {
+            const res = await fetch(`${API_BASE_URL}/api/upload-dataset`, {
                 method: "POST",
                 body: formData,
             });
@@ -320,7 +322,7 @@ function Assistant({ config, schema, context }: { config: DashboardData['assista
         setLoading(true);
 
         try {
-            const res = await fetch("http://localhost:3000/api/ask-dataset", {
+            const res = await fetch(`${API_BASE_URL}/api/ask-dataset`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ query: q, schema, context })

@@ -29,6 +29,8 @@ export default function VizPage() {
     }
   };
 
+  const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3000";
+
   useEffect(() => {
     if (!query) {
       setLoading(false);
@@ -43,7 +45,7 @@ export default function VizPage() {
 
     const fetchVisualization = async () => {
       try {
-        const response = await fetch("http://localhost:3000/api/generate", {
+        const response = await fetch(`${API_BASE_URL}/api/generate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query }),
