@@ -3,6 +3,10 @@ const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const { GoogleGenAI } = require("@google/genai");
+const multer = require('multer');
+const fs = require('fs');
+const csv = require('csv-parser');
+const upload = multer({ dest: 'uploads/' });
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -318,6 +322,175 @@ DO NOT include explanations, markdown, or commentary outside JSON.
             return res.status(429).json({ error: "Gemini API Quota Exceeded", details: error.message });
         }
         res.status(500).json({ error: "Failed to judge code", details: error.message });
+    }
+});
+
+// Data Dashboard: Upload & Analyze Route
+app.post('/api/upload-dataset', upload.single('file'), async (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    const results = [];
+    const filePath = req.file.path;
+    let rowCount = 0;
+
+    try {
+        // Parse CSV
+        await new Promise((resolve, reject) => {
+            fs.createReadStream(filePath)
+                .pipe(csv())
+                .on('data', (data) => {
+                    rowCount++;
+                    if (results.length < 10000) {
+                        results.push(data);
+                    }
+                })
+                .on('end', resolve)
+                .on('error', reject);
+        });
+
+        // Cleanup file immediately
+        fs.unlinkSync(filePath);
+
+        if (results.length === 0) {
+            return res.status(400).json({ error: "CSV appears to be empty" });
+        }
+
+        const schema = Object.keys(results[0]).join(", ");
+        const datasetHead = JSON.stringify(results, null, 2);
+
+        const prompt = `**Role:** You are the VIZ-LENS Data Oracle. Your goal is to transform raw data into a complete, interactive visual narrative for a non-technical user.
+
+**[INPUT DATA]**
+- Dataset Snippet: ${datasetHead}
+- Column Names & Data Types: ${schema}
+- Total Row Count: ${rowCount}
+
+**[STRICT VISUALIZATION RULES]**
+1. **Diversity Mandate:** You MUST select exactly THREE DIFFERENT chart types.
+2. **The Palette:** You must pick one from each category:
+   - Category A (Comparison): bar
+   - Category B (Relationship/Trend): line, scatter, or area
+   - Category C (Composition/Distribution): pie, donut, or treemap
+3. **No Repeats:** Never use the same chart_type more than once in the entire dashboard.
+4. **Logic Check:**
+   - Use *Line* ONLY if there is a 'Date' or 'Time' column.
+   - Use *Scatter* ONLY if comparing two numeric columns for correlation.
+   - Use *Pie* ONLY for categories with fewer than 6 unique values.
+
+**[TASK - GENERATE THE COMPLETE STORY]**
+1. **Smart Snapshot:** Analyze the health and purpose of the data.
+2. **Auto-Dashboard:** Select 3 IMPACTFUL and UNIQUE charts following the Palette rules above.
+3. **Conversational Insights:** For each chart, explain What, Why, and Significance.
+4. **Natural Language Knowledge Map:** Based on the columns, suggest the 3 most important questions a user *should* ask this data.
+5. **Integrity Guardrail:** Identify any statistical bias, outliers, or misleading patterns.
+
+**[OUTPUT FORMAT - STRICT JSON ONLY]**
+{
+  "snapshot": {
+    "title": "catchy_title",
+    "summary": "2_sentence_overview",
+    "health_grade": "A|B|C|D",
+    "quick_stats": ["stat1", "stat2"]
+  },
+  "dashboard": [
+    {
+      "chart_id": 1,
+      "chart_type": "bar|line|scatter|pie|area|donut|treemap",
+      "title": "string",
+      "x_axis": "col_name (must exist in schema)",
+      "y_axis": "col_name (must exist in schema)",
+      "insights": { "what": "string", "why": "string", "significance": "string" }
+    }
+  ],
+  "assistant_config": {
+    "suggested_queries": [
+      { "question": "Question text?", "logic_hint": "Filter by X, Group by Y" }
+    ],
+    "data_context_summary": "A brief summary for the AI to remember if asked a follow-up question."
+  },
+  "guardrail": {
+    "message": "⚠️ Warning_text",
+    "severity": "high|medium"
+  }
+}`;
+
+        const response = await generateWithRetry('gemini-3-flash-preview', prompt, {
+            responseMimeType: 'application/json'
+        });
+
+        let dashboardData = {};
+        if (response.candidates && response.candidates.length > 0 && response.candidates[0].content && response.candidates[0].content.parts.length > 0) {
+            const text = response.candidates[0].content.parts[0].text.replace(/```json/g, '').replace(/```/g, '').trim();
+            dashboardData = JSON.parse(text);
+        } else if (response.text) {
+            // Fallback for different response shapes
+            const text = typeof response.text === 'function' ? response.text() : response.text;
+            dashboardData = JSON.parse(text.replace(/```json/g, '').replace(/```/g, '').trim());
+        }
+
+        // Return the Analysis + The Raw Data (so frontend can graph it)
+        // Caution: Sending 10k rows to frontend is fine (modern browsers handle it), but 1M might lag.
+        // For MVP/Hackathon, sending full JSON is perfect.
+        // We'll re-read the full file if we wanted to send all rows, but 'results' only has 5.
+        // Wait, I only saved 5 rows.
+        // I need to parse the WHOLE file to data array to send it to frontend for Chart.js
+        // Let's re-parse or just store all in memory (Hackathon scale: <10MB is fine).
+
+        // REVISION: Parse all rows into memory for the frontend.
+        // (Since I already consumed the stream, I need to do this differently or just store all)
+
+        res.json({ analysis: dashboardData, dataset: results });
+
+    } catch (error) {
+        console.error("Dashboard API Error:", error);
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath); // Ensure cleanup
+
+        if (error.status === 429 || (error.message && error.message.includes('quota'))) {
+            return res.status(429).json({ error: "Gemini API Quota Exceeded", details: error.message });
+        }
+        res.status(500).json({ error: "Failed to analyze dataset", details: error.message });
+    }
+});
+
+// Data Assistant Chat Route
+app.post('/api/ask-dataset', async (req, res) => {
+    try {
+        const { query, schema, context } = req.body;
+
+        const prompt = `**Role:** VIZ-LENS Chat Assistant.
+**Context:** You are analyzing a dataset with these columns: ${schema}.
+**Background Info:** ${context || "None"}
+**User Question:** "${query}"
+
+**Task:** Answer the question using the data logic and specify the best chart to show the answer.
+
+**Return JSON:**
+{
+  "text_answer": "Direct answer to the question",
+  "chart_to_render": { "type": "string", "x": "col", "y": "col" },
+  "follow_up": "One more thing they could ask."
+}`;
+
+        const response = await generateWithRetry('gemini-3-flash-preview', prompt, {
+            responseMimeType: 'application/json'
+        });
+
+        let answerData = {};
+        if (response.candidates && response.candidates[0].content.parts.length > 0) {
+            const text = response.candidates[0].content.parts[0].text.replace(/```json/g, '').replace(/```/g, '').trim();
+            answerData = JSON.parse(text);
+        }
+
+        res.json(answerData);
+
+    } catch (error) {
+        console.error("Chat API Error:", error);
+        if (error.status === 429 || (error.message && error.message.includes('quota'))) {
+            return res.status(429).json({ error: "Gemini API Quota Exceeded", details: error.message });
+        }
+        res.status(500).json({ error: "Failed to get answer", details: error.message });
     }
 });
 

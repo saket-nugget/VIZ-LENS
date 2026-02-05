@@ -12,8 +12,12 @@
     "@google/genai": "^1.35.0",
     "@google/generative-ai": "^0.24.1",
     "@monaco-editor/react": "^4.7.0",
+    "chart.js": "^4.5.1",
+    "framer-motion": "^12.31.0",
+    "lucide-react": "^0.563.0",
     "next": "16.1.1",
     "react": "19.2.3",
+    "react-chartjs-2": "^5.3.1",
     "react-dom": "19.2.3"
   },
   "devDependencies": {
