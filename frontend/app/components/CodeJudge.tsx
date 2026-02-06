@@ -29,12 +29,14 @@ export default function CodeJudge({ topic }: JudgeProps) {
         )
     }
 
+    const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3000";
+
     const handleSubmit = async () => {
         setLoading(true);
         setResult(null);
         setError(null);
         try {
-            const res = await fetch("http://localhost:3000/api/judge", {
+            const res = await fetch(`${API_BASE_URL}/api/judge`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ code, topic, language }),

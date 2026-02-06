@@ -3,11 +3,11 @@
 import { useState, useEffect } from "react";
 
 interface Question {
-  question: string;
-  options: string[];
-  correctAnswer?: string;   // allow optional
-  correctIndex?: number;    // allow optional
-  explanation: string;
+    question: string;
+    options: string[];
+    correctAnswer?: string;   // allow optional
+    correctIndex?: number;    // allow optional
+    explanation: string;
 }
 
 
@@ -25,31 +25,33 @@ export default function Quiz({ topic, onComplete }: QuizProps) {
     const [selectedOption, setSelectedOption] = useState<string | null>(null);
     const [quizCompleted, setQuizCompleted] = useState(false);
 
+    const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3000";
+
     useEffect(() => {
         setLoading(true);
-setQuestions([]);
-setCurrentQuestion(0);
-setScore(0);
-setShowExplanation(false);
-setSelectedOption(null);
-setQuizCompleted(false);
+        setQuestions([]);
+        setCurrentQuestion(0);
+        setScore(0);
+        setShowExplanation(false);
+        setSelectedOption(null);
+        setQuizCompleted(false);
 
         const fetchQuiz = async () => {
             try {
-                const res = await fetch("http://localhost:3000/api/quiz", {
+                const res = await fetch(`${API_BASE_URL}/api/quiz`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ topic }),
                 });
                 const data = await res.json();
 
-const questionsArr = data?.quiz?.questions;
-if (Array.isArray(questionsArr)) {
-  setQuestions(questionsArr);
-} else {
-  console.error("Invalid quiz format:", data);
-  setQuestions([]);
-}
+                const questionsArr = data?.quiz?.questions;
+                if (Array.isArray(questionsArr)) {
+                    setQuestions(questionsArr);
+                } else {
+                    console.error("Invalid quiz format:", data);
+                    setQuestions([]);
+                }
 
 
             } catch (error) {
@@ -67,7 +69,7 @@ if (Array.isArray(questionsArr)) {
         setSelectedOption(option);
         setShowExplanation(true);
 
-        if (option === correct){
+        if (option === correct) {
             setScore(score + 1);
         }
     };
@@ -84,35 +86,35 @@ if (Array.isArray(questionsArr)) {
     };
 
     if (loading) return <div className="text-white animate-pulse">Loading Quiz...</div>;
-if (questions.length === 0) return <div className="text-red-400">Failed to load quiz.</div>;
+    if (questions.length === 0) return <div className="text-red-400">Failed to load quiz.</div>;
 
-const q = questions[currentQuestion];
-const correct =
-  typeof q.correctAnswer === "string"
-    ? q.correctAnswer
-    : typeof q.correctIndex === "number"
-      ? q.options[q.correctIndex]
-      : undefined;
-if (!q) {
-    return <div className="text-red-400">Quiz data is invalid.</div>;
-}
+    const q = questions[currentQuestion];
+    const correct =
+        typeof q.correctAnswer === "string"
+            ? q.correctAnswer
+            : typeof q.correctIndex === "number"
+                ? q.options[q.correctIndex]
+                : undefined;
+    if (!q) {
+        return <div className="text-red-400">Quiz data is invalid.</div>;
+    }
 
-if (quizCompleted) {
-    return (
-        <div className="bg-white/5 p-6 rounded-xl border border-white/10 text-center">
-            <h3 className="text-2xl font-bold text-white mb-4">Quiz Completed! 🎉</h3>
-            <p className="text-gray-300 mb-4">
-                You scored {score} out of {questions.length}
-            </p>
-            <button
-                onClick={onComplete}
-                className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
-            >
-                Proceed to Code Challenge
-            </button>
-        </div>
-    );
-}
+    if (quizCompleted) {
+        return (
+            <div className="bg-white/5 p-6 rounded-xl border border-white/10 text-center">
+                <h3 className="text-2xl font-bold text-white mb-4">Quiz Completed! 🎉</h3>
+                <p className="text-gray-300 mb-4">
+                    You scored {score} out of {questions.length}
+                </p>
+                <button
+                    onClick={onComplete}
+                    className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
+                >
+                    Proceed to Code Challenge
+                </button>
+            </div>
+        );
+    }
 
 
     return (
