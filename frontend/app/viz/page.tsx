@@ -1,14 +1,23 @@
 "use client";
 
 import { useSearchParams, useRouter } from "next/navigation";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, Suspense } from "react";
 import Visualizer from "../components/visualizer";
 import Quiz from "../components/Quiz";
 import CodeJudge from "../components/CodeJudge";
 import { ArrowLeft, Search, BookOpen } from "lucide-react";
 import { motion } from "framer-motion";
 
-export default function VizPage() {
+function LoadingState() {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen bg-[#0D1117] text-white">
+      <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
+      <div className="text-xl font-light tracking-wide animate-pulse">Loading VIZ-LENS...</div>
+    </div>
+  );
+}
+
+function VizContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const query = searchParams.get("q");
@@ -181,5 +190,13 @@ export default function VizPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function VizPage() {
+  return (
+    <Suspense fallback={<LoadingState />}>
+      <VizContent />
+    </Suspense>
   );
 }
