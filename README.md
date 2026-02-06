@@ -1,44 +1,96 @@
-Gemini Hackathon - VIZ-LENS
+# VIZ-LENS - Interactive Intuition Engine 🧠✨
 
-Project Name: VIZ-LENS
-The "Google Lens" for Abstract Concepts
+VIZ-LENS is a dual-engine educational tool designed to transform abstract concepts and raw data into interactive, visual experiences. Whether you want to visualize a sorting algorithm or analyze a complex CSV dataset, VIZ-LENS generates a custom, interactive dashboard instantly using Google Gemini.
 
-1. The Problem: "Information vs. Intuition"
-We have infinite information (ChatGPT, StackOverflow), but zero intuition.
-- Devs copy code without seeing the execution flow.
-- Students memorize formulas without visualizing the physics.
-- Analysts stare at CSVs without seeing the patterns.
+🔗 **Live Demo:** [https://viz-lens.vercel.app](https://viz-lens.vercel.app)
 
-Existing tools are either too specific (sorting visualizers) or too passive (chatbots giving text answers). We lack a unified "Lens" to instantly visualize any complex input, tailored to cater to your doubts.
+![VIZ-LENS Demo](https://raw.githubusercontent.com/saket-nugget/VIZ-LENS/main/public/demo_screenshot.png)
 
-2. The Solution: VIZ-LENS
-VIZ-LENS is an AI-Native Visualization Engine. It doesn't just "tell" you the answer; it SHOWS you how it works.
+## ✨ Features
 
-It uses **Gemini 3 Flash** to parse Code, Math, Data, or Repos and auto-generates interactive visuals (Flowcharts, Graphs, Data Plots).
+### 1. Concept Lens (The Visualizer) 🎨
+*   **🔮 Generative Simulations:** Turns text prompts (e.g., "Bubble Sort", "Photosynthesis") into interactive HTML5 visualizations.
+*   **🕹️ Interactive Controls:** Step-by-step playback, speed control, and dynamic variable tracking.
+*   **🧠 Active Learning:** Includes an auto-generated **Quiz** to test your understanding after the simulation.
+*   **💻 Code Judge:** A built-in code editor that verifies your logical implementation of the concept using AI.
 
-Key Features
-1. Universal Visualization:
-   - Code: Highlights DFS code -> Sees a dynamic graph traversal.
-   - Math: Highlights F=ma -> Sees a force interaction graph.
-2. Instant Data Dashboards:
-   - Right-click a CSV/JSON link -> Instant Heatmaps & Distribution plots (No Python needed).
-3. Repo-to-Knowledge:
-   - Paste a GitHub URL -> Generates a System Architecture Diagram of the entire codebase.
-4. Active Learning (The "Twist"):
-   - Gamification: The tool visualizes the process but hides the solution.
-   - Unlock Mechanism: Users step through the visualization, take a generated **Quiz**, and then write code in the **AI Judge** to unlock the final solution.
+### 2. Data Lens (The Oracle) 📊
+*   **📂 Intelligent Parsing:** Upload any CSV and instantly get a "Health Grade" and summary.
+*   **📈 Auto-Dashboard:** Automatically selects the best 3 chart types (Bar, Line, Scatter, Pie) to visualize your data.
+*   **🤖 Data Assistant:** A chat interface where you can ask questions like "Show me the trend of revenue over time" and get answers + charts.
+*   **🛡️ Integrity Guardrails:** Automatically detects outliers, bias, and missing data.
 
-3. In short (Elevator pitch)
-"We are building VIZ-LENS. Think of it as Google Lens, but for abstract concepts.
+---
 
-Instead of asking a chatbot 'What is the answer?', you point VIZ-LENS at a problem and say 'Show me how this works.'
-- It turns Code into Flowcharts.
-- It turns Data into Dashboards.
-- It turns Repos into Architecture Diagrams.
+## 🛠️ Tech Stack
 
-We solve the 'AI makes us lazy' problem by instead leveraging AI to forcing Active Learning—users engage with the visual to unlock the final code. It's not a cheating tool; it's an intuition engine."
+*   **Frontend:** Next.js 14 (App Router) + Tailwind CSS
+*   **Backend:** Node.js + Express
+*   **AI:** Google Gemini 1.5 Pro & Flash (via Google AI Studio)
+*   **Visualization:** Chart.js + HTML5 Canvas
+*   **Editor:** Monaco Editor (VS Code embedded)
+*   **Animations:** Framer Motion
+*   **Deployment:** Vercel (Frontend) + Render (Backend)
 
-4. Why This Wins (Judge's Perspective)
-1. Multimodal "Wow" Factor: We go beyond text-to-text. We do Text-to-Visual and Data-to-Visual using Gemini's multimodal capabilities.
-2. Solves Hallucination/Laziness: The "Active Learning" reward system proves we are enhancing human intelligence, not replacing it.
-3. **Technical Depth**: It's a full-stack challenge—Complex Prompt Engineering + Dynamic Frontend Rendering + Real-time Code Evaluation using Gemini 3.
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+*   Node.js (v18+)
+*   A Google Gemini API Key ([Get one here](https://aistudio.google.com/app/apikey))
+
+### Installation
+
+1.  **Clone the repository**
+    ```bash
+    git clone https://github.com/saket-nugget/VIZ-LENS.git
+    cd VIZ-LENS
+    ```
+
+2.  **Setup Backend**
+    ```bash
+    cd backend
+    npm install
+    # Create .env file
+    echo "GEMINI_API_KEY=your_key_here" > .env
+    node server.js
+    ```
+
+3.  **Setup Frontend**
+    ```bash
+    cd frontend
+    npm install
+    # Set Metadata
+    # (Optional) Update NEXT_PUBLIC_BACKEND_URL in .env.local if deploying
+    npm run dev
+    ```
+
+4.  **Run the App**
+    Open [http://localhost:3001](http://localhost:3001) in your browser.
+
+---
+
+## 📖 Usage Guide
+
+1.  **Pick a Lens:** Choose **Concept Lens** for topics or **Data Lens** for files.
+2.  **Concept Mode:** Type "A* Search Algorithm" and hit enter. Watch the simulation.
+3.  **Data Mode:** Upload a CSV. Chat with the "Data Assistant" to uncover insights.
+4.  **Test Yourself:** Complete the quiz and try to code the solution in the "Code Challenge" tab.
+
+---
+
+## 🔮 Future Scope
+*   **🎙️ Voice Mode:** Explain concepts via voice interaction.
+*   **📦 3D Models:** Integrate Three.js for scientific visualizations.
+*   **📚 Classroom Mode:** Allow teachers to broadcast simulations to student screens.
+
+---
+
+## 🤝 Contributing
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
+
+---
+
+## 📄 License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
