@@ -127,7 +127,7 @@ export default function DashboardPage() {
                                 <Upload className="w-12 h-12 text-purple-400 opacity-50 group-hover:opacity-100 transition-opacity" />
                             )}
                             <div className="text-lg font-medium text-gray-300 group-hover:text-white transition-colors">
-                                {loading ? "Analyzing 10,000+ Rows..." : "Drag & Drop or Click to Upload"}
+                                {loading ? "Analyzing data and Generating visual insights" : "Drag & Drop or Click to Upload"}
                             </div>
                             <p className="text-sm text-gray-500">Supports .csv files</p>
                         </div>

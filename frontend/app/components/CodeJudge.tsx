@@ -65,7 +65,7 @@ export default function CodeJudge({ topic }: JudgeProps) {
                 </div>
                 <button
                     onClick={() => setIsSkipped(true)}
-                    className="text-xs text-gray-500 hover:text-white px-3 py-1.5 rounded border border-white/10 hover:bg-white/5 transition-colors"
+                    className="text-xs text-gray-300 hover:text-white px-3 py-1.5 rounded border border-white/10 hover:bg-white/5 transition-colors"
                 >
                     Skip Challenge
                 </button>
