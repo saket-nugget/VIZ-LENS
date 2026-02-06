@@ -486,7 +486,7 @@ app.post('/api/ask-dataset', async (req, res) => {
         });
 
         let answerData = {};
-        if (response.candidates && response.candidates[0].content.parts.length > 0) {
+        if (response.candidates && response.candidates.length > 0 && response.candidates[0].content && response.candidates[0].content.parts && response.candidates[0].content.parts.length > 0) {
             const text = response.candidates[0].content.parts[0].text.replace(/```json/g, '').replace(/```/g, '').trim();
             answerData = JSON.parse(text);
         }

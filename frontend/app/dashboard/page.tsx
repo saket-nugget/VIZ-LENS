@@ -338,7 +338,7 @@ function Assistant({ config, schema, context }: { config: DashboardData['assista
     };
 
     return (
-        <div className="bg-[#161b22] border border-white/10 rounded-3xl overflow-hidden shadow-2xl flex flex-col h-[600px] md:h-auto">
+        <div className="bg-[#161b22] border border-white/10 rounded-3xl overflow-hidden shadow-2xl flex flex-col h-[600px]">
             <div className="p-5 bg-white/5 border-b border-white/10 flex items-center gap-3">
                 <div className="bg-purple-500/20 p-2 rounded-lg">
                     <MessageSquare className="w-5 h-5 text-purple-400" />
