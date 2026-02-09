@@ -4,7 +4,12 @@ VIZ-LENS is a dual-engine educational tool designed to transform abstract concep
 
 🔗 **Live Demo:** [https://viz-lens.vercel.app](https://viz-lens.vercel.app)
 
-![VIZ-LENS Demo](https://raw.githubusercontent.com/saket-nugget/VIZ-LENS/main/public/demo_screenshot.png)
+<img width="1909" height="817" alt="image" src="https://github.com/user-attachments/assets/9055686a-055a-4bfd-bca6-f771d5a0e4c2" />
+![WhatsApp Image 2026-02-09 at 11 25 10 PM](https://github.com/user-attachments/assets/b79b0440-e6cb-408d-b38f-a194a0a2a0d6)
+![WhatsApp Image 2026-02-09 at 11 25 10 PM (1)](https://github.com/user-attachments/assets/941de8ee-a424-46c9-8757-bca92da6a15c)
+
+
+
 
 ## ✨ Features
 
