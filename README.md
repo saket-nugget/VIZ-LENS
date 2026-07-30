@@ -28,7 +28,7 @@ VIZ-LENS is a dual-engine educational tool designed to transform abstract concep
 
 *   **Frontend:** Next.js 14 (App Router) + Tailwind CSS
 *   **Backend:** Node.js + Express
-*   **AI:** Google Gemini 1.5 Pro & Flash (via Google AI Studio)
+*   **AI:** Google Gemini 3 Flash (via Google AI Studio)
 *   **Visualization:** Chart.js + HTML5 Canvas
 *   **Editor:** Monaco Editor (VS Code embedded)
 *   **Animations:** Framer Motion
