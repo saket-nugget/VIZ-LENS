@@ -10,6 +10,7 @@ const upload = multer({ dest: 'uploads/' });
 const { verify, initBrowser, VerificationError } = require('./verifier');
 const { shouldSkipCache, normalizeQuery, lookupCache } = require('./cache');
 const db = require('./db');
+const { nanoid } = require('nanoid');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -104,6 +105,23 @@ async function embedQuery(text) {
         contents: text,
     });
     return response.embeddings[0].values;
+}
+
+// Insert a verified visualization into the shared cache. Returns the slug, or null.
+async function insertVerifiedIntoCache({ query, html, repaired, embedding }) {
+    const slug = nanoid(8);
+    const normalized = normalizeQuery(query);
+    const ok = await db.insertVizCache({
+        slug,
+        query_raw: query,
+        query_normalized: normalized,
+        topic: normalized, // placeholder until topic extraction lands
+        embedding,
+        html,
+        prompt_version: PROMPT_VERSION,
+        repaired,
+    });
+    return ok ? slug : null;
 }
 
 function extractResponseText(response) {
@@ -222,7 +240,23 @@ Return a complete, self-contained HTML document with inline CSS + inline JS.`;
                     generate: async (prompt) =>
                         extractResponseText(await generateWithRetry('gemini-3-flash-preview', prompt)),
                 });
-                return res.json({ html: result.html, verified: true, repaired: result.repaired });
+                // Only verified HTML may enter the shared cache
+                let slug = null;
+                if (cacheUsable && missEmbedding) {
+                    slug = await insertVerifiedIntoCache({
+                        query,
+                        html: result.html,
+                        repaired: result.repaired,
+                        embedding: missEmbedding,
+                    });
+                }
+                return res.json({
+                    html: result.html,
+                    verified: true,
+                    repaired: result.repaired,
+                    slug,
+                    cached: false,
+                });
             } catch (verifyError) {
                 if (verifyError instanceof VerificationError) {
                     console.error("Verification failed:", verifyError.message);
@@ -234,7 +268,8 @@ Return a complete, self-contained HTML document with inline CSS + inline JS.`;
             }
         }
 
-        res.json({ html, verified: false, repaired: false });
+        // Unverified output is never cached
+        res.json({ html, verified: false, repaired: false, slug: null, cached: false });
 
     } catch (error) {
         console.error("Gemini API Error Details:", JSON.stringify(error, null, 2));
