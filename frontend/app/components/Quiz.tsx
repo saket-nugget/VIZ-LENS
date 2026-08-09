@@ -13,7 +13,7 @@ interface Question {
 
 interface QuizProps {
     topic: string;
-    onComplete: () => void;
+    onComplete: (score: number) => void;
 }
 
 export default function Quiz({ topic, onComplete }: QuizProps) {
@@ -81,7 +81,7 @@ export default function Quiz({ topic, onComplete }: QuizProps) {
             setShowExplanation(false);
         } else {
             setQuizCompleted(true);
-            onComplete();
+            onComplete(score);
         }
     };
 
@@ -107,7 +107,7 @@ export default function Quiz({ topic, onComplete }: QuizProps) {
                     You scored {score} out of {questions.length}
                 </p>
                 <button
-                    onClick={onComplete}
+                    onClick={() => onComplete(score)}
                     className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
                 >
                     Proceed to Code Challenge

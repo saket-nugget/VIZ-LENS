@@ -7,6 +7,7 @@ import Quiz from "../components/Quiz";
 import CodeJudge from "../components/CodeJudge";
 import { ArrowLeft, Search, BookOpen, Share2 } from "lucide-react";
 import { motion } from "framer-motion";
+import { addToLibrary, updateQuizScore } from "../lib/library";
 
 function LoadingState() {
   return (
@@ -98,6 +99,15 @@ function VizContent() {
         console.log("HTML received:", data.html);
         setHtml(data.html);
         setSlug(data.slug ?? null);
+        if (data.slug) {
+          addToLibrary({
+            slug: data.slug,
+            query,
+            topic: query,
+            date: new Date().toISOString(),
+            quizScore: null,
+          });
+        }
         if (data.cached) {
           showToast("⚡ served from memory", 1000);
         }
@@ -240,7 +250,10 @@ function VizContent() {
         {!showJudge ? (
           <Quiz
             topic={query}
-            onComplete={() => setShowJudge(true)}
+            onComplete={(score) => {
+              if (slug) updateQuizScore(slug, score);
+              setShowJudge(true);
+            }}
           />
         ) : (
           <CodeJudge topic={query} />
