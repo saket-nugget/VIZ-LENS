@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import Visualizer from "../../components/visualizer";
 import { BookOpen } from "lucide-react";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3000";
 
-export default function SharedVizPage({ params }: { params: { slug: string } }) {
+export default function SharedVizPage() {
+  const params = useParams<{ slug: string }>();
   const router = useRouter();
   const [html, setHtml] = useState("");
   const [loading, setLoading] = useState(true);
