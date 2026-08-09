@@ -1,6 +1,7 @@
 // Workstream A: verification & auto-repair for generated visualizations.
 // Stage 1: static checks. Stage 2: Puppeteer smoke test. One repair attempt on failure.
 const { parse } = require('node-html-parser');
+const puppeteer = require('puppeteer');
 
 // Gemini sometimes wraps output in markdown fences despite instructions.
 function stripCodeFences(html) {
@@ -64,4 +65,74 @@ function runStaticChecks(html) {
     return { pass: failures.length === 0, failures };
 }
 
-module.exports = { stripCodeFences, runStaticChecks };
+// --- Puppeteer smoke test ---
+// Singleton browser (Render free tier ≈ 512MB — one Chromium max), launched at server boot.
+let browser = null;
+
+async function initBrowser() {
+    if (browser) return browser;
+    browser = await puppeteer.launch({
+        headless: true, // v22+ new headless
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
+    return browser;
+}
+
+async function closeBrowser() {
+    if (browser) {
+        await browser.close();
+        browser = null;
+    }
+}
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const ERROR_CAPTURE_MS = 4000;
+const POST_CLICK_WAIT_MS = 500;
+
+// Returns { pass: boolean, failures: [{ check, error }] }
+async function runSmokeTest(html) {
+    await initBrowser();
+    const context = await browser.createBrowserContext(); // incognito: fresh state per check
+    const errors = [];
+    try {
+        const page = await context.newPage();
+        page.on('pageerror', err => errors.push(`pageerror: ${err.message}`));
+        page.on('console', msg => {
+            if (msg.type() === 'error') errors.push(`console.error: ${msg.text()}`);
+        });
+
+        await page.setContent(html, { timeout: 8000 });
+        await sleep(ERROR_CAPTURE_MS);
+
+        if (errors.length > 0) {
+            return { pass: false, failures: [{ check: 'runtime-load', error: errors.join('\n') }] };
+        }
+
+        // Find the "Next" step control: common ids first, then button text
+        const clicked = await page.evaluate(() => {
+            const byId = document.querySelector('#next-btn, #nextBtn, #next');
+            const target = byId || [...document.querySelectorAll('button')]
+                .find(b => /next/i.test(b.textContent));
+            if (!target) return false;
+            target.click();
+            return true;
+        });
+
+        if (!clicked) {
+            return { pass: false, failures: [{ check: 'runtime-next', error: 'No "Next" control found to click' }] };
+        }
+
+        await sleep(POST_CLICK_WAIT_MS);
+        if (errors.length > 0) {
+            return { pass: false, failures: [{ check: 'runtime-next', error: errors.join('\n') }] };
+        }
+
+        return { pass: true, failures: [] };
+    } catch (e) {
+        return { pass: false, failures: [{ check: 'runtime-load', error: `Smoke test crashed: ${e.message}` }] };
+    } finally {
+        await context.close().catch(() => {});
+    }
+}
+
+module.exports = { stripCodeFences, runStaticChecks, initBrowser, closeBrowser, runSmokeTest };
