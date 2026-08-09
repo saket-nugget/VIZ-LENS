@@ -25,6 +25,11 @@ const CACHE_ENABLED = process.env.CACHE === '1';
 // v2: added canvas resize-safety rule (zero-size guard).
 const PROMPT_VERSION = 'v2';
 
+// Model routing policy: Flash for viz generation + repair ONLY; Flash-Lite for
+// all structured-JSON tasks (separate free-tier quota pool per model).
+const VIZ_MODEL = 'gemini-3-flash-preview';
+const JSON_MODEL = 'gemini-3.1-flash-lite';
+
 // Initialize Gemini
 // Initialize Gemini
 // Initialize Gemini Keys
@@ -238,7 +243,7 @@ Every file MUST include these four sections exactly:
 Return a complete, self-contained HTML document with inline CSS + inline JS.`;
 
 
-        const response = await generateWithRetry('gemini-3-flash-preview', systemPrompt);
+        const response = await generateWithRetry(VIZ_MODEL, systemPrompt);
         const html = extractResponseText(response);
 
         if (VERIFY_ENABLED) {
@@ -246,7 +251,7 @@ Return a complete, self-contained HTML document with inline CSS + inline JS.`;
                 const result = await verify(html, {
                     query,
                     generate: async (prompt) =>
-                        extractResponseText(await generateWithRetry('gemini-3-flash-preview', prompt)),
+                        extractResponseText(await generateWithRetry(VIZ_MODEL, prompt)),
                 });
                 // Only verified HTML may enter the shared cache
                 let slug = null;
@@ -352,7 +357,7 @@ OUTPUT JSON SCHEMA:
 
 
 
-        const response = await generateWithRetry('gemini-3-flash-preview', quizPrompt, {
+        const response = await generateWithRetry(JSON_MODEL, quizPrompt, {
             responseMimeType: 'application/json'
         });
 
@@ -423,7 +428,7 @@ DO NOT include explanations, markdown, or commentary outside JSON.
 }`;
 
 
-        const response = await generateWithRetry('gemini-3-flash-preview', judgePrompt, {
+        const response = await generateWithRetry(JSON_MODEL, judgePrompt, {
             responseMimeType: 'application/json'
         });
 
@@ -548,7 +553,7 @@ app.post('/api/upload-dataset', upload.single('file'), async (req, res) => {
   }
 }`;
 
-        const response = await generateWithRetry('gemini-3-flash-preview', prompt, {
+        const response = await generateWithRetry(JSON_MODEL, prompt, {
             responseMimeType: 'application/json'
         });
 
@@ -605,7 +610,7 @@ app.post('/api/ask-dataset', async (req, res) => {
   "follow_up": "One more thing they could ask."
 }`;
 
-        const response = await generateWithRetry('gemini-3-flash-preview', prompt, {
+        const response = await generateWithRetry(JSON_MODEL, prompt, {
             responseMimeType: 'application/json'
         });
 
