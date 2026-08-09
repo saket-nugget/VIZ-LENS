@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Visualizer from "../../components/visualizer";
-import { BookOpen } from "lucide-react";
+import Quiz from "../../components/Quiz";
+import CodeJudge from "../../components/CodeJudge";
+import { BookOpen, Share2 } from "lucide-react";
+import { readLibrary, addToLibrary, updateQuizScore } from "../../lib/library";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3000";
 
@@ -11,8 +14,44 @@ export default function SharedVizPage() {
   const params = useParams<{ slug: string }>();
   const router = useRouter();
   const [html, setHtml] = useState("");
+  const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [showJudge, setShowJudge] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const quizRef = useRef<HTMLDivElement>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = (message: string, ms: number) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast(message);
+    toastTimer.current = setTimeout(() => setToast(null), ms);
+  };
+
+  const handleShare = () => {
+    navigator.clipboard
+      .writeText(window.location.href)
+      .then(() => showToast("Link copied", 2000));
+  };
+
+  // Generated visualizations post START_QUIZ from the sandboxed iframe
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data === "START_QUIZ") {
+        const el = quizRef.current;
+        if (!el) return;
+        const beforeY = window.scrollY;
+        el.scrollIntoView({ behavior: "smooth" });
+        // Smooth scroll silently no-ops in some embedded Chromium contexts
+        setTimeout(() => {
+          if (window.scrollY === beforeY) el.scrollIntoView();
+        }, 400);
+      }
+    };
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, []);
 
   useEffect(() => {
     const fetchViz = async () => {
@@ -24,6 +63,18 @@ export default function SharedVizPage() {
         }
         const data = await res.json();
         setHtml(data.html);
+        setQuery(data.query_raw || "");
+        // Record in this device's library — but never clobber an existing
+        // entry (it may hold a quiz score)
+        if (data.query_raw && !readLibrary().some((e) => e.slug === params.slug)) {
+          addToLibrary({
+            slug: params.slug,
+            query: data.query_raw,
+            topic: data.query_raw,
+            date: new Date().toISOString(),
+            quizScore: null,
+          });
+        }
       } catch {
         setNotFound(true);
       } finally {
@@ -64,14 +115,49 @@ export default function SharedVizPage() {
 
   return (
     <div className="w-full min-h-screen bg-[#0D1117]">
-      <div className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-white/5 border-b border-white/10 text-sm text-gray-300">
-        Made with VIZ-LENS
-        <span className="text-gray-500">→</span>
-        <a href="/" className="text-blue-400 hover:text-blue-300 transition-colors font-medium">
-          Create your own
-        </a>
+      <div className="w-full flex items-center justify-between gap-2 py-2 px-4 bg-white/5 border-b border-white/10 text-sm text-gray-300">
+        <div className="flex items-center gap-2">
+          Made with VIZ-LENS
+          <span className="text-gray-500">→</span>
+          <a href="/" className="text-blue-400 hover:text-blue-300 transition-colors font-medium">
+            Create your own
+          </a>
+        </div>
+        <button
+          onClick={handleShare}
+          className="px-3 py-1.5 rounded-lg flex items-center gap-2
+                     bg-white/10 border border-white/20 text-white text-xs font-medium
+                     hover:bg-white/20 hover:border-white/30 transition-all"
+        >
+          <Share2 size={14} /> Share
+        </button>
       </div>
+
+      {toast && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl
+                        bg-white/10 backdrop-blur-md border border-white/20
+                        text-white text-sm shadow-lg">
+          {toast}
+        </div>
+      )}
+
       <Visualizer html={html} />
+
+      {query && (
+        <div ref={quizRef} className="container mx-auto px-4 pb-20">
+          {!showJudge ? (
+            <Quiz
+              topic={query}
+              onComplete={(score) => {
+                updateQuizScore(params.slug, score);
+                setShowJudge(true);
+              }}
+            />
+          ) : (
+            <CodeJudge topic={query} />
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -52,7 +52,14 @@ function VizContent() {
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data === "START_QUIZ") {
-        quizRef.current?.scrollIntoView({ behavior: "smooth" });
+        const el = quizRef.current;
+        if (!el) return;
+        const beforeY = window.scrollY;
+        el.scrollIntoView({ behavior: "smooth" });
+        // Smooth scroll silently no-ops in some embedded Chromium contexts
+        setTimeout(() => {
+          if (window.scrollY === beforeY) el.scrollIntoView();
+        }, 400);
       }
     };
     window.addEventListener("message", handleMessage);
