@@ -29,6 +29,18 @@ function VizContent() {
   const [searchInput, setSearchInput] = useState("");
 
   const lastQuery = useRef<string | null>(null);
+  const quizRef = useRef<HTMLDivElement>(null);
+
+  // Generated visualizations post START_QUIZ from the sandboxed iframe
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data === "START_QUIZ") {
+        quizRef.current?.scrollIntoView({ behavior: "smooth" });
+      }
+    };
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, []);
 
   // Handle Search Submit from Empty State
   const handleSearch = (e: React.FormEvent) => {
@@ -179,7 +191,7 @@ function VizContent() {
 
       <Visualizer html={html} />
 
-      <div className="container mx-auto px-4 pb-20">
+      <div ref={quizRef} className="container mx-auto px-4 pb-20">
         {!showJudge ? (
           <Quiz
             topic={query}

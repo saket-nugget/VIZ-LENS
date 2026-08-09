@@ -12,7 +12,7 @@ export default function Visualizer({ html }: VisualizerProps) {
   return (
     <iframe
       ref={iframeRef}
-      sandbox="allow-scripts allow-same-origin"
+      sandbox="allow-scripts"
       srcDoc={html}
       className="w-full h-screen border-0"
       title="Visualization"
