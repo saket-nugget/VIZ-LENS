@@ -19,6 +19,7 @@
   "description": "",
   "dependencies": {
     "@google/genai": "^1.35.0",
+    "@supabase/supabase-js": "^2.112.2",
     "body-parser": "^2.2.2",
     "cors": "^2.8.5",
     "csv-parser": "^3.2.0",

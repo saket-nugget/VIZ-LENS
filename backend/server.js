@@ -7,9 +7,11 @@ const multer = require('multer');
 const fs = require('fs');
 const csv = require('csv-parser');
 const upload = multer({ dest: 'uploads/' });
+const { verify, initBrowser, VerificationError } = require('./verifier');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const VERIFY_ENABLED = process.env.VERIFY === '1';
 
 // Initialize Gemini
 // Initialize Gemini
@@ -87,6 +89,17 @@ async function generateWithRetry(modelName, prompt, config = {}) {
     throw new Error(`All ${uniqueKeys.length} API keys have exhausted their quota.`);
 }
 
+function extractResponseText(response) {
+    if (response.candidates && response.candidates.length > 0 && response.candidates[0].content && response.candidates[0].content.parts && response.candidates[0].content.parts.length > 0) {
+        return response.candidates[0].content.parts[0].text;
+    } else if (typeof response.text === 'function') {
+        return response.text();
+    } else if (response.text) {
+        return response.text;
+    }
+    throw new Error("Unknown response structure: " + JSON.stringify(response));
+}
+
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
@@ -155,20 +168,28 @@ Return a complete, self-contained HTML document with inline CSS + inline JS.`;
 
 
         const response = await generateWithRetry('gemini-3-flash-preview', systemPrompt);
+        const html = extractResponseText(response);
 
-        let html = "";
-        // Prioritize candidates array as seen in logs
-        if (response.candidates && response.candidates.length > 0 && response.candidates[0].content && response.candidates[0].content.parts && response.candidates[0].content.parts.length > 0) {
-            html = response.candidates[0].content.parts[0].text;
-        } else if (typeof response.text === 'function') {
-            html = response.text();
-        } else if (response.text) {
-            html = response.text;
-        } else {
-            throw new Error("Unknown response structure: " + JSON.stringify(response));
+        if (VERIFY_ENABLED) {
+            try {
+                const result = await verify(html, {
+                    query,
+                    generate: async (prompt) =>
+                        extractResponseText(await generateWithRetry('gemini-3-flash-preview', prompt)),
+                });
+                return res.json({ html: result.html, verified: true, repaired: result.repaired });
+            } catch (verifyError) {
+                if (verifyError instanceof VerificationError) {
+                    console.error("Verification failed:", verifyError.message);
+                    return res.status(422).json({
+                        error: "That one didn't compile on our end. Try again or rephrase your topic.",
+                    });
+                }
+                throw verifyError;
+            }
         }
 
-        res.json({ html });
+        res.json({ html, verified: false, repaired: false });
 
     } catch (error) {
         console.error("Gemini API Error Details:", JSON.stringify(error, null, 2));
@@ -505,4 +526,10 @@ app.post('/api/ask-dataset', async (req, res) => {
 // Start Server
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    if (VERIFY_ENABLED) {
+        // Launch the singleton browser at boot so the first check has no cold start
+        initBrowser()
+            .then(() => console.log('Verifier browser ready'))
+            .catch(err => console.error('Failed to launch verifier browser:', err.message));
+    }
 });

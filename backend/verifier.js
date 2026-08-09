@@ -2,6 +2,7 @@
 // Stage 1: static checks. Stage 2: Puppeteer smoke test. One repair attempt on failure.
 const { parse } = require('node-html-parser');
 const puppeteer = require('puppeteer');
+const { logGenerationFailure } = require('./db');
 
 // Gemini sometimes wraps output in markdown fences despite instructions.
 function stripCodeFences(html) {
@@ -135,4 +136,87 @@ async function runSmokeTest(html) {
     }
 }
 
-module.exports = { stripCodeFences, runStaticChecks, initBrowser, closeBrowser, runSmokeTest };
+// --- Verify + single repair attempt ---
+
+class VerificationError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'VerificationError';
+    }
+}
+
+function describeFailures(failures) {
+    return failures.map(f => `[${f.check}] ${f.error}`).join('\n');
+}
+
+// Runs static then runtime checks. Returns null on pass, else { stage, error }.
+async function runChecks(html) {
+    const staticResult = runStaticChecks(html);
+    if (!staticResult.pass) {
+        return { stage: 'static', error: describeFailures(staticResult.failures) };
+    }
+    const smokeResult = await runSmokeTest(html);
+    if (!smokeResult.pass) {
+        return { stage: 'runtime', error: describeFailures(smokeResult.failures) };
+    }
+    return null;
+}
+
+function buildRepairPrompt(html, failure) {
+    return `You previously generated the HTML visualization below, but it failed verification.
+
+**Failing check:** ${failure.stage}
+**Exact error:**
+${failure.error}
+
+**Original HTML:**
+${html}
+
+Fix the problem and return the corrected COMPLETE HTML document only.
+No markdown, no explanations, no code fences. Keep all required sections:
+<canvas>, #description-box, #take-quiz-btn, Next/Prev controls.
+Use literal quotes in <script> (never &quot;) and never use localStorage,
+sessionStorage, or document.cookie.`;
+}
+
+// generate: async (prompt) => html text (injected — keeps model calls out of this module).
+// Returns { html, verified: true, repaired } or throws VerificationError.
+async function verify(rawHtml, { query, generate }) {
+    const html = stripCodeFences(rawHtml);
+
+    const failure = await runChecks(html);
+    if (!failure) {
+        return { html, verified: true, repaired: false };
+    }
+    await logGenerationFailure({ query, stage: failure.stage, error: failure.error, repaired: false });
+
+    // One repair attempt, then re-run both stages on the result.
+    let repairedHtml;
+    try {
+        repairedHtml = stripCodeFences(await generate(buildRepairPrompt(html, failure)));
+    } catch (e) {
+        throw new VerificationError(`Repair generation failed: ${e.message}`);
+    }
+
+    const repairFailure = await runChecks(repairedHtml);
+    if (!repairFailure) {
+        return { html: repairedHtml, verified: true, repaired: true };
+    }
+    await logGenerationFailure({
+        query,
+        stage: `repair_${repairFailure.stage}`,
+        error: repairFailure.error,
+        repaired: true,
+    });
+    throw new VerificationError(`Verification failed after repair: ${repairFailure.error}`);
+}
+
+module.exports = {
+    stripCodeFences,
+    runStaticChecks,
+    initBrowser,
+    closeBrowser,
+    runSmokeTest,
+    verify,
+    VerificationError,
+};
