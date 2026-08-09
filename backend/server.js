@@ -22,7 +22,8 @@ const CACHE_ENABLED = process.env.CACHE === '1';
 
 // Bump on any Master Engine prompt edit — old cache rows are excluded from
 // lookup (kept for analytics) because lookups filter on prompt_version.
-const PROMPT_VERSION = 'v1';
+// v2: added canvas resize-safety rule (zero-size guard).
+const PROMPT_VERSION = 'v2';
 
 // Initialize Gemini
 // Initialize Gemini
@@ -231,6 +232,7 @@ Every file MUST include these four sections exactly:
 - Theme: Dark Slate (#0f172a) with Glassmorphism.
 - Colors: Primary Blue (#00d1ff) for pointers, Success Green (#22c55e) for positive results, Danger Red (#ef4444) for conflicts.
 - Canvas Logic: Use ctx.save() and ctx.restore(). Use bar charts, trees, or coordinate planes based on the topic.
+- Resize Safety: any resize handler MUST skip when canvas.offsetWidth or canvas.offsetHeight is 0. Never set the canvas buffer to zero — a resize while hidden must leave the canvas untouched, or it will stay blank forever.
 
 **[OUTPUT REQUIREMENT]**
 Return a complete, self-contained HTML document with inline CSS + inline JS.`;
