@@ -8,7 +8,7 @@ const fs = require('fs');
 const csv = require('csv-parser');
 const upload = multer({ dest: 'uploads/' });
 const { verify, initBrowser, VerificationError } = require('./verifier');
-const { shouldSkipCache, normalizeQuery, lookupCache } = require('./cache');
+const { shouldSkipCache, normalizeQuery, lookupCache, quizWithFallback } = require('./cache');
 const db = require('./db');
 const { nanoid } = require('nanoid');
 const { createRateLimiter } = require('./rateLimit');
@@ -357,31 +357,22 @@ OUTPUT JSON SCHEMA:
 
 
 
-        const response = await generateWithRetry(JSON_MODEL, quizPrompt, {
-            responseMimeType: 'application/json'
+        // Fresh-first with cached fallback: parse failures count as generation
+        // failures so they fall back to the stored quiz too
+        const { quiz, fallback } = await quizWithFallback({
+            topic,
+            enabled: CACHE_ENABLED,
+            generate: async () => {
+                const response = await generateWithRetry(JSON_MODEL, quizPrompt, {
+                    responseMimeType: 'application/json'
+                });
+                const text = extractResponseText(response)
+                    .replace(/```json/g, '').replace(/```/g, '').trim();
+                return JSON.parse(text);
+            },
         });
 
-        let quizData = [];
-        try {
-            let text = "";
-            if (response.candidates && response.candidates.length > 0 && response.candidates[0].content && response.candidates[0].content.parts && response.candidates[0].content.parts.length > 0) {
-                text = response.candidates[0].content.parts[0].text;
-            } else if (typeof response.text === 'function') {
-                text = response.text();
-            } else if (response.text) {
-                text = response.text;
-            }
-
-            // Clean markdown if present
-            text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-            quizData = JSON.parse(text);
-
-        } catch (e) {
-            console.error("Failed to parse quiz JSON:", e);
-            return res.status(500).json({ error: "Failed to parse quiz data" });
-        }
-
-        res.json({ quiz: quizData });
+        res.json({ quiz, fallback });
 
     } catch (error) {
         console.error("Quiz API Error:", error);

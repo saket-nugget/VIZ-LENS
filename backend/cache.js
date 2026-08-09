@@ -50,10 +50,32 @@ async function lookupCache({ query, promptVersion, embed, db = defaultDb }) {
     return { hit: null, matchType: null, embedding };
 }
 
+// Fresh-first quiz with stored fallback: always try to generate; on success
+// store the result on the topic's cache row (overwriting, so the fallback
+// stays recent); on failure serve the stored quiz if one exists, else rethrow.
+async function quizWithFallback({ topic, generate, enabled = true, db = defaultDb }) {
+    if (!enabled) {
+        return { quiz: await generate(), fallback: false };
+    }
+    const row = await db.getQuizCacheRow(normalizeQuery(topic));
+    try {
+        const quiz = await generate();
+        if (row) db.storeQuizOnCacheRow(row.id, quiz); // fire-and-forget
+        return { quiz, fallback: false };
+    } catch (e) {
+        if (row && row.quiz) {
+            console.log(`[quiz] generation failed (${e.message}) — serving stored fallback`);
+            return { quiz: row.quiz, fallback: true };
+        }
+        throw e;
+    }
+}
+
 module.exports = {
     normalizeQuery,
     shouldSkipCache,
     lookupCache,
+    quizWithFallback,
     SERVE_THRESHOLD,
     NEAR_MISS_THRESHOLD,
 };

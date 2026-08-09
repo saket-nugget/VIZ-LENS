@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { runStaticChecks, runSmokeTest, verify, closeBrowser, VerificationError } = require('../verifier');
-const { normalizeQuery, shouldSkipCache, lookupCache } = require('../cache');
+const { normalizeQuery, shouldSkipCache, lookupCache, quizWithFallback } = require('../cache');
 const { createRateLimiter } = require('../rateLimit');
 
 const fixture = (name) => fs.readFileSync(path.join(__dirname, 'fixtures', name), 'utf8');
@@ -159,6 +159,66 @@ async function main() {
     });
     check('embed failure degrades to a miss without throwing',
         embedFails.hit === null && embedFails.embedding === null);
+
+    // --- Quiz fresh-first with stored fallback (mocked db + generate) ---
+    console.log('Quiz fallback:');
+    const FRESH_QUIZ = { questions: ['fresh'] };
+    const STORED_QUIZ = { questions: ['stored'] };
+    const quizDb = (row) => {
+        const stored = [];
+        return {
+            stored,
+            getQuizCacheRow: async () => row,
+            storeQuizOnCacheRow: async (id, quiz) => { stored.push({ id, quiz }); },
+        };
+    };
+
+    {
+        const db = quizDb({ id: 'row1', quiz: STORED_QUIZ });
+        const result = await quizWithFallback({
+            topic: '  Bubble SORT ', generate: async () => FRESH_QUIZ, db,
+        });
+        await new Promise(r => setTimeout(r, 10)); // let fire-and-forget store land
+        check('fresh success serves fresh and stores it on the cache row',
+            result.fallback === false && result.quiz === FRESH_QUIZ &&
+            db.stored.length === 1 && db.stored[0].id === 'row1' && db.stored[0].quiz === FRESH_QUIZ);
+    }
+
+    {
+        const db = quizDb({ id: 'row1', quiz: STORED_QUIZ });
+        const result = await quizWithFallback({
+            topic: 'bubble sort', generate: async () => { throw new Error('quota'); }, db,
+        });
+        check('generation failure with stored quiz serves fallback: true',
+            result.fallback === true && result.quiz === STORED_QUIZ && db.stored.length === 0);
+    }
+
+    {
+        const db = quizDb({ id: 'row1', quiz: null }); // row exists, no stored quiz
+        let threw = false;
+        try {
+            await quizWithFallback({ topic: 'bubble sort', generate: async () => { throw new Error('quota'); }, db });
+        } catch (e) { threw = e.message === 'quota'; }
+        check('generation failure without stored quiz rethrows', threw);
+    }
+
+    {
+        const db = quizDb(null); // no cache row at all
+        const ok = await quizWithFallback({ topic: 'new topic', generate: async () => FRESH_QUIZ, db });
+        let threw = false;
+        try {
+            await quizWithFallback({ topic: 'new topic', generate: async () => { throw new Error('boom'); }, db });
+        } catch { threw = true; }
+        check('no cache row behaves as today (success passes through, failure rethrows)',
+            ok.fallback === false && ok.quiz === FRESH_QUIZ && db.stored.length === 0 && threw);
+    }
+
+    {
+        let dbTouched = false;
+        const db = { getQuizCacheRow: async () => { dbTouched = true; return null; }, storeQuizOnCacheRow: async () => { dbTouched = true; } };
+        const off = await quizWithFallback({ topic: 'x', enabled: false, generate: async () => FRESH_QUIZ, db });
+        check('cache flag off skips db entirely', off.fallback === false && off.quiz === FRESH_QUIZ && !dbTouched);
+    }
 
     // --- Rate limiter (injected clock, no waiting) ---
     console.log('Rate limiter:');

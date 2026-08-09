@@ -117,6 +117,41 @@ async function logShareOpen(slug) {
     }
 }
 
+// Quiz storage lives on the topic's cache row. Deliberately NOT filtered by
+// prompt_version: quiz content depends on the topic, not the viz prompt, so
+// older rows still provide a usable fallback.
+async function getQuizCacheRow(queryNormalized) {
+    if (!supabase) return null;
+    try {
+        const { data, error } = await supabase
+            .from('viz_cache')
+            .select('id, quiz')
+            .eq('query_normalized', queryNormalized)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        if (error) {
+            console.error('[db] Quiz cache lookup failed:', error.message);
+            return null;
+        }
+        return data;
+    } catch (e) {
+        console.error('[db] Quiz cache lookup failed:', e.message);
+        return null;
+    }
+}
+
+// Overwrites any previously stored quiz so the fallback stays recent
+async function storeQuizOnCacheRow(id, quiz) {
+    if (!supabase) return;
+    try {
+        const { error } = await supabase.from('viz_cache').update({ quiz }).eq('id', id);
+        if (error) console.error('[db] Quiz store failed:', error.message);
+    } catch (e) {
+        console.error('[db] Quiz store failed:', e.message);
+    }
+}
+
 // Read-modify-write off the already-fetched row; a lost increment under
 // concurrency is acceptable for hit analytics.
 async function incrementHitCount(row) {
@@ -141,4 +176,6 @@ module.exports = {
     incrementHitCount,
     getCacheBySlug,
     logShareOpen,
+    getQuizCacheRow,
+    storeQuizOnCacheRow,
 };
