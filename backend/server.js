@@ -101,11 +101,14 @@ async function generateWithRetry(modelName, prompt, config = {}) {
 }
 
 // Single embedding model per project policy — no substitutes.
+// (Spec named text-embedding-004, but the API retired it; gemini-embedding-001
+// at 768 dims matches the vector(768) schema.)
 async function embedQuery(text) {
     const client = getClient();
     const response = await client.models.embedContent({
-        model: 'text-embedding-004',
+        model: 'gemini-embedding-001',
         contents: text,
+        config: { outputDimensionality: 768 },
     });
     return response.embeddings[0].values;
 }
