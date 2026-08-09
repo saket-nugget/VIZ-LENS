@@ -14,6 +14,8 @@ const { nanoid } = require('nanoid');
 const { createRateLimiter } = require('./rateLimit');
 
 const app = express();
+// Behind Render's proxy: trust X-Forwarded-For so req.ip is the real client IP
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
 const VERIFY_ENABLED = process.env.VERIFY === '1';
 const CACHE_ENABLED = process.env.CACHE === '1';
