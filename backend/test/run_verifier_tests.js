@@ -2,6 +2,7 @@
 // No API key or network needed: the repair test uses a mocked generate function.
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const { runStaticChecks, runSmokeTest, verify, closeBrowser, VerificationError } = require('../verifier');
 const { normalizeQuery, shouldSkipCache, lookupCache } = require('../cache');
 const { createRateLimiter } = require('../rateLimit');
@@ -169,6 +170,23 @@ async function main() {
     check('blocks the 31st request', allow('1.2.3.4', t0 + 31) === false);
     check('other IPs are unaffected', allow('5.6.7.8', t0 + 31) === true);
     check('allows again after the window expires', allow('1.2.3.4', t0 + 61_000) === true);
+
+    // --- Library helpers (frontend TS, run via node type-stripping) ---
+    console.log('Library helpers:');
+    const lib = spawnSync(
+        process.execPath,
+        ['--experimental-strip-types', '--no-warnings', path.join(__dirname, 'library_tests.mjs')],
+        { encoding: 'utf8' }
+    );
+    process.stdout.write((lib.stdout || '').replace(/^LIBRARY_RESULT.*\n?$/m, ''));
+    const resultLine = (lib.stdout || '').match(/LIBRARY_RESULT (\d+) (\d+)/);
+    if (resultLine) {
+        passed += Number(resultLine[1]);
+        failed += Number(resultLine[2]);
+    } else {
+        failed++;
+        console.log(`  ✗ library test child failed to run — ${lib.stderr || 'no output'}`);
+    }
 
     console.log(`\n${passed} passed, ${failed} failed`);
     process.exit(failed > 0 ? 1 : 0);
