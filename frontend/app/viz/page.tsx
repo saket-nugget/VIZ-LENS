@@ -206,35 +206,32 @@ function VizContent() {
   // --- STATE 4: Success (Visualizer + Quiz + Judge) ---
   return (
     <div className="w-full min-h-screen bg-[#0D1117]">
-      <button
-        onClick={() => router.push('/')}
-        className="absolute top-6 left-6 z-10 
-                   px-4 py-2 rounded-xl flex items-center gap-2
-                   bg-white/10 backdrop-blur-sm
-                   border border-white/20
-                   text-white font-medium text-sm
-                   hover:bg-white/20 hover:border-white/30
-                   transition-all duration-200
-                   shadow-lg"
-      >
-        <ArrowLeft size={16} /> Home
-      </button>
-
-      {slug && (
+      {/* Header bar instead of overlays: generated HTML controls its own
+          full-width layout, so floating buttons collide with its content */}
+      <div className="w-full flex items-center justify-between px-6 py-3 bg-white/5 border-b border-white/10">
         <button
-          onClick={handleShare}
-          className="absolute top-6 right-6 z-10
-                     px-4 py-2 rounded-xl flex items-center gap-2
-                     bg-white/10 backdrop-blur-sm
-                     border border-white/20
+          onClick={() => router.push('/')}
+          className="px-4 py-2 rounded-xl flex items-center gap-2
+                     bg-white/10 border border-white/20
                      text-white font-medium text-sm
                      hover:bg-white/20 hover:border-white/30
-                     transition-all duration-200
-                     shadow-lg"
+                     transition-all duration-200"
         >
-          <Share2 size={16} /> Share
+          <ArrowLeft size={16} /> Home
         </button>
-      )}
+        {slug && (
+          <button
+            onClick={handleShare}
+            className="px-4 py-2 rounded-xl flex items-center gap-2
+                       bg-white/10 border border-white/20
+                       text-white font-medium text-sm
+                       hover:bg-white/20 hover:border-white/30
+                       transition-all duration-200"
+          >
+            <Share2 size={16} /> Share
+          </button>
+        )}
+      </div>
 
       {toast && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl
