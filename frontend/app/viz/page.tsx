@@ -5,7 +5,7 @@ import { useEffect, useState, useRef, Suspense } from "react";
 import Visualizer from "../components/visualizer";
 import Quiz from "../components/Quiz";
 import CodeJudge from "../components/CodeJudge";
-import { ArrowLeft, Search, BookOpen } from "lucide-react";
+import { ArrowLeft, Search, BookOpen, Share2 } from "lucide-react";
 import { motion } from "framer-motion";
 
 function LoadingState() {
@@ -27,9 +27,25 @@ function VizContent() {
   const [error, setError] = useState("");
   const [showJudge, setShowJudge] = useState(false);
   const [searchInput, setSearchInput] = useState("");
+  const [slug, setSlug] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   const lastQuery = useRef<string | null>(null);
   const quizRef = useRef<HTMLDivElement>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = (message: string, ms: number) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast(message);
+    toastTimer.current = setTimeout(() => setToast(null), ms);
+  };
+
+  const handleShare = () => {
+    if (!slug) return;
+    navigator.clipboard
+      .writeText(`${window.location.origin}/v/${slug}`)
+      .then(() => showToast("Link copied", 2000));
+  };
 
   // Generated visualizations post START_QUIZ from the sandboxed iframe
   useEffect(() => {
@@ -63,6 +79,7 @@ function VizContent() {
     lastQuery.current = query;
     setLoading(true); // Reset loading on new query
     setError(""); // Reset error
+    setSlug(null); // Reset share state on new query
 
     const fetchVisualization = async () => {
       try {
@@ -80,6 +97,10 @@ function VizContent() {
 
         console.log("HTML received:", data.html);
         setHtml(data.html);
+        setSlug(data.slug ?? null);
+        if (data.cached) {
+          showToast("⚡ served from memory", 1000);
+        }
         setLoading(false);
       } catch (err: unknown) {
         console.error(err);
@@ -188,6 +209,30 @@ function VizContent() {
       >
         <ArrowLeft size={16} /> Home
       </button>
+
+      {slug && (
+        <button
+          onClick={handleShare}
+          className="absolute top-6 right-6 z-10
+                     px-4 py-2 rounded-xl flex items-center gap-2
+                     bg-white/10 backdrop-blur-sm
+                     border border-white/20
+                     text-white font-medium text-sm
+                     hover:bg-white/20 hover:border-white/30
+                     transition-all duration-200
+                     shadow-lg"
+        >
+          <Share2 size={16} /> Share
+        </button>
+      )}
+
+      {toast && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl
+                        bg-white/10 backdrop-blur-md border border-white/20
+                        text-white text-sm shadow-lg">
+          {toast}
+        </div>
+      )}
 
       <Visualizer html={html} />
 
