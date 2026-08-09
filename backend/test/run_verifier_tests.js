@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { runStaticChecks, runSmokeTest, verify, closeBrowser, VerificationError } = require('../verifier');
+const { normalizeQuery, shouldSkipCache, lookupCache } = require('../cache');
 
 const fixture = (name) => fs.readFileSync(path.join(__dirname, 'fixtures', name), 'utf8');
 
@@ -82,6 +83,80 @@ async function main() {
     check('still-broken repair throws VerificationError', threw);
 
     await closeBrowser();
+
+    // --- Cache logic (mocked db + embed, no network) ---
+    console.log('Cache logic:');
+
+    check('normalizeQuery trims, lowercases, collapses whitespace',
+        normalizeQuery('  Bubble   SORT \n algo  ') === 'bubble sort algo');
+
+    check('shouldSkipCache: plain query uses cache', shouldSkipCache({ query: 'x' }) === false);
+    check('shouldSkipCache: context field skips cache', shouldSkipCache({ query: 'x', context: 'notes' }) === true);
+    check('shouldSkipCache: user code skips cache', shouldSkipCache({ query: 'x', code: 'for(;;)' }) === true);
+
+    const FAKE_EMBEDDING = [0.1, 0.2, 0.3];
+    const mockDb = (rows, matches) => {
+        const calls = { exact: 0, match: 0 };
+        return {
+            calls,
+            getCacheExact: async (normalized, pv) => {
+                calls.exact++;
+                return rows.find(r => r.query_normalized === normalized && r.prompt_version === pv) || null;
+            },
+            matchVizCache: async () => { calls.match++; return matches; },
+        };
+    };
+    const neverEmbed = async () => { throw new Error('embed must not be called on exact hit'); };
+    const mockEmbed = async () => FAKE_EMBEDDING;
+    const row = { slug: 'abc12345', query_normalized: 'bubble sort', prompt_version: 'v1', html: '<html></html>', hit_count: 0 };
+
+    const exactHit = await lookupCache({
+        query: '  Bubble  Sort ', promptVersion: 'v1', embed: neverEmbed,
+        db: mockDb([row], []),
+    });
+    check('exact hit served without embedding call',
+        exactHit.hit === row && exactHit.matchType === 'exact');
+
+    const wrongVersion = await lookupCache({
+        query: 'bubble sort', promptVersion: 'v2', embed: mockEmbed,
+        db: mockDb([row], []),
+    });
+    check('exact match on other prompt_version is not served', wrongVersion.hit === null);
+
+    const semanticHit = await lookupCache({
+        query: 'bubblesort visualization', promptVersion: 'v1', embed: mockEmbed,
+        db: mockDb([], [{ ...row, similarity: 0.95 }]),
+    });
+    check('semantic match at 0.95 is served with embedding returned',
+        semanticHit.hit !== null && semanticHit.matchType === 'semantic' && semanticHit.embedding === FAKE_EMBEDDING);
+
+    let nearMissLogged = false;
+    const origLog = console.log;
+    console.log = (...args) => {
+        if (String(args[0]).includes('near-miss')) nearMissLogged = true;
+        origLog(...args);
+    };
+    const nearMiss = await lookupCache({
+        query: 'why is bubble sort slow', promptVersion: 'v1', embed: mockEmbed,
+        db: mockDb([], [{ ...row, similarity: 0.85 }]),
+    });
+    console.log = origLog;
+    check('near-miss at 0.85 is NOT served', nearMiss.hit === null);
+    check('near-miss at 0.85 is logged', nearMissLogged);
+    check('miss still returns embedding for the later insert', nearMiss.embedding === FAKE_EMBEDDING);
+
+    const fullMiss = await lookupCache({
+        query: 'dijkstra', promptVersion: 'v1', embed: mockEmbed,
+        db: mockDb([], [{ ...row, similarity: 0.42 }]),
+    });
+    check('similarity below 0.80 is a plain miss', fullMiss.hit === null);
+
+    const embedFails = await lookupCache({
+        query: 'quicksort', promptVersion: 'v1', embed: async () => { throw new Error('quota'); },
+        db: mockDb([], []),
+    });
+    check('embed failure degrades to a miss without throwing',
+        embedFails.hit === null && embedFails.embedding === null);
 
     console.log(`\n${passed} passed, ${failed} failed`);
     process.exit(failed > 0 ? 1 : 0);
