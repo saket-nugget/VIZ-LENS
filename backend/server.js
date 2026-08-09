@@ -8,10 +8,17 @@ const fs = require('fs');
 const csv = require('csv-parser');
 const upload = multer({ dest: 'uploads/' });
 const { verify, initBrowser, VerificationError } = require('./verifier');
+const { shouldSkipCache, normalizeQuery, lookupCache } = require('./cache');
+const db = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const VERIFY_ENABLED = process.env.VERIFY === '1';
+const CACHE_ENABLED = process.env.CACHE === '1';
+
+// Bump on any Master Engine prompt edit — old cache rows are excluded from
+// lookup (kept for analytics) because lookups filter on prompt_version.
+const PROMPT_VERSION = 'v1';
 
 // Initialize Gemini
 // Initialize Gemini
@@ -89,6 +96,16 @@ async function generateWithRetry(modelName, prompt, config = {}) {
     throw new Error(`All ${uniqueKeys.length} API keys have exhausted their quota.`);
 }
 
+// Single embedding model per project policy — no substitutes.
+async function embedQuery(text) {
+    const client = getClient();
+    const response = await client.models.embedContent({
+        model: 'text-embedding-004',
+        contents: text,
+    });
+    return response.embeddings[0].values;
+}
+
 function extractResponseText(response) {
     if (response.candidates && response.candidates.length > 0 && response.candidates[0].content && response.candidates[0].content.parts && response.candidates[0].content.parts.length > 0) {
         return response.candidates[0].content.parts[0].text;
@@ -127,6 +144,34 @@ app.post('/api/generate', async (req, res) => {
 
         if (!query) {
             return res.status(400).json({ error: "Query is required" });
+        }
+
+        // Contract: requests with user context/code never read or write the shared cache
+        const cacheUsable = CACHE_ENABLED && !shouldSkipCache(req.body);
+        let missEmbedding = null;
+
+        if (cacheUsable) {
+            try {
+                const { hit, matchType, embedding } = await lookupCache({
+                    query,
+                    promptVersion: PROMPT_VERSION,
+                    embed: embedQuery,
+                });
+                if (hit) {
+                    console.log(`[cache] ${matchType} hit for "${normalizeQuery(query)}" (slug ${hit.slug})`);
+                    db.incrementHitCount(hit); // fire-and-forget
+                    return res.json({
+                        html: hit.html,
+                        verified: true, // only verified HTML is ever inserted
+                        repaired: hit.repaired,
+                        slug: hit.slug,
+                        cached: true,
+                    });
+                }
+                missEmbedding = embedding; // reused for the insert after verify
+            } catch (cacheError) {
+                console.error('[cache] Lookup failed, generating normally:', cacheError.message);
+            }
         }
 
         const systemPrompt = `**Role:** You are the VIZ-LENS Master Engine. You generate "AI-Native" Interactive Intuition Engines. You transform Code, Math, or Data into a premium, responsive HTML5 application.
