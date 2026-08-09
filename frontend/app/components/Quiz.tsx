@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 interface Question {
     question: string;
@@ -27,7 +27,13 @@ export default function Quiz({ topic, onComplete }: QuizProps) {
 
     const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3000";
 
+    const lastTopic = useRef<string | null>(null);
+
     useEffect(() => {
+        // Prevent double-fetch in React Strict Mode — each quiz costs a Gemini call
+        if (topic === lastTopic.current) return;
+        lastTopic.current = topic;
+
         setLoading(true);
         setQuestions([]);
         setCurrentQuestion(0);
