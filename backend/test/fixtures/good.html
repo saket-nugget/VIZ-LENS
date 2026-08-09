@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  body { background: #0f172a; color: #fff; font-family: sans-serif; }
+  #description-box { font-family: monospace; }
+</style>
+</head>
+<body>
+  <h1>Bubble Sort <span id="stat">pass 0</span></h1>
+  <canvas id="viz" width="400" height="200"></canvas>
+  <div>
+    <button id="prev-btn">Prev</button>
+    <button id="next-btn">Next</button>
+    <button id="play-btn">Play</button>
+    <input type="range" id="progress" min="0" max="3" value="0">
+  </div>
+  <div id="description-box">Step 0: initial array.</div>
+  <textarea id="custom-input">5,3,8</textarea>
+  <button id="generate-btn">Generate Visualization</button>
+  <button id="take-quiz-btn" disabled>Take the Quiz</button>
+  <script>
+    const steps = ["Step 0: initial array.", "Step 1: compare 5 and 3.", "Step 2: swap.", "Step 3: done."];
+    let i = 0;
+    const box = document.getElementById("description-box");
+    const canvas = document.getElementById("viz");
+    const ctx = canvas.getContext("2d");
+    function draw() {
+      ctx.save();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#00d1ff";
+      ctx.fillRect(10 + i * 20, 50, 15, 100);
+      ctx.restore();
+    }
+    function render() {
+      box.textContent = steps[i];
+      document.getElementById("progress").value = i;
+      document.getElementById("take-quiz-btn").disabled = i !== steps.length - 1;
+      draw();
+    }
+    document.getElementById("next-btn").onclick = () => { if (i < steps.length - 1) i++; render(); };
+    document.getElementById("prev-btn").onclick = () => { if (i > 0) i--; render(); };
+    document.getElementById("take-quiz-btn").onclick = () => window.parent.postMessage("START_QUIZ", "*");
+    render();
+  </script>
+</body>
+</html>

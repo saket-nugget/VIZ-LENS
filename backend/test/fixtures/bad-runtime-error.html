@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<body>
+  <canvas id="viz"></canvas>
+  <div id="description-box">Static checks pass, but Next throws.</div>
+  <button id="next-btn">Next</button>
+  <button id="take-quiz-btn">Take the Quiz</button>
+  <script>
+    document.getElementById("next-btn").onclick = () => {
+      advanceStep(); // not defined: throws on click
+    };
+  </script>
+</body>
+</html>
