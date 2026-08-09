@@ -11,6 +11,7 @@ const { verify, initBrowser, VerificationError } = require('./verifier');
 const { shouldSkipCache, normalizeQuery, lookupCache } = require('./cache');
 const db = require('./db');
 const { nanoid } = require('nanoid');
+const { createRateLimiter } = require('./rateLimit');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -280,6 +281,21 @@ Return a complete, self-contained HTML document with inline CSS + inline JS.`;
 
         res.status(500).json({ error: "Failed to generate visualization", details: error.message });
     }
+});
+
+// Shared visualization by slug (public, read-only, rate-limited)
+const shareLimiter = createRateLimiter({ limit: 30, windowMs: 60_000 });
+
+app.get('/api/viz/:slug', async (req, res) => {
+    if (!shareLimiter(req.ip)) {
+        return res.status(429).json({ error: "Too many requests — try again in a minute." });
+    }
+    const row = await db.getCacheBySlug(req.params.slug);
+    if (!row) {
+        return res.status(404).json({ error: "Visualization not found" });
+    }
+    db.logShareOpen(req.params.slug); // fire-and-forget growth analytics
+    res.json({ html: row.html, query_raw: row.query_raw, created_at: row.created_at });
 });
 
 // Quiz Generation Route

@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { runStaticChecks, runSmokeTest, verify, closeBrowser, VerificationError } = require('../verifier');
 const { normalizeQuery, shouldSkipCache, lookupCache } = require('../cache');
+const { createRateLimiter } = require('../rateLimit');
 
 const fixture = (name) => fs.readFileSync(path.join(__dirname, 'fixtures', name), 'utf8');
 
@@ -157,6 +158,17 @@ async function main() {
     });
     check('embed failure degrades to a miss without throwing',
         embedFails.hit === null && embedFails.embedding === null);
+
+    // --- Rate limiter (injected clock, no waiting) ---
+    console.log('Rate limiter:');
+    const allow = createRateLimiter({ limit: 30, windowMs: 60_000 });
+    const t0 = 1_000_000;
+    let allowed = 0;
+    for (let i = 0; i < 30; i++) if (allow('1.2.3.4', t0 + i)) allowed++;
+    check('allows 30 requests within the window', allowed === 30);
+    check('blocks the 31st request', allow('1.2.3.4', t0 + 31) === false);
+    check('other IPs are unaffected', allow('5.6.7.8', t0 + 31) === true);
+    check('allows again after the window expires', allow('1.2.3.4', t0 + 61_000) === true);
 
     console.log(`\n${passed} passed, ${failed} failed`);
     process.exit(failed > 0 ? 1 : 0);

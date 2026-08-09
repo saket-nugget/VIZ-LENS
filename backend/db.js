@@ -87,6 +87,36 @@ async function insertVizCache(row) {
     }
 }
 
+async function getCacheBySlug(slug) {
+    if (!supabase) return null;
+    try {
+        const { data, error } = await supabase
+            .from('viz_cache')
+            .select('html, query_raw, created_at')
+            .eq('slug', slug)
+            .maybeSingle();
+        if (error) {
+            console.error('[db] Slug lookup failed:', error.message);
+            return null;
+        }
+        return data;
+    } catch (e) {
+        console.error('[db] Slug lookup failed:', e.message);
+        return null;
+    }
+}
+
+// Growth analytics — fire-and-forget, never blocks the response
+async function logShareOpen(slug) {
+    if (!supabase) return;
+    try {
+        const { error } = await supabase.from('share_opens').insert({ slug });
+        if (error) console.error('[db] share_opens insert failed:', error.message);
+    } catch (e) {
+        console.error('[db] share_opens insert failed:', e.message);
+    }
+}
+
 // Read-modify-write off the already-fetched row; a lost increment under
 // concurrency is acceptable for hit analytics.
 async function incrementHitCount(row) {
@@ -109,4 +139,6 @@ module.exports = {
     matchVizCache,
     insertVizCache,
     incrementHitCount,
+    getCacheBySlug,
+    logShareOpen,
 };
