@@ -12,7 +12,9 @@ export default function Visualizer({ html }: VisualizerProps) {
   return (
     <iframe
       ref={iframeRef}
-      sandbox="allow-scripts allow-same-origin"
+      // No allow-same-origin: paired with allow-scripts it would give the
+      // generated code a same-origin document and disable the sandbox entirely.
+      sandbox="allow-scripts"
       srcDoc={html}
       className="w-full h-screen border-0"
       title="Visualization"
