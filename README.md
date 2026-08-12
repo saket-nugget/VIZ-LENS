@@ -26,7 +26,7 @@ VIZ-LENS is a dual-engine educational tool designed to transform abstract concep
 
 ## 🛠️ Tech Stack
 
-*   **Frontend:** Next.js 14 (App Router) + Tailwind CSS
+*   **Frontend:** Next.js 16 (App Router) + Tailwind CSS
 *   **Backend:** Node.js + Express
 *   **AI:** Google Gemini 3 Flash (via Google AI Studio)
 *   **Visualization:** Chart.js + HTML5 Canvas
@@ -58,12 +58,14 @@ VIZ-LENS is a dual-engine educational tool designed to transform abstract concep
     echo "GEMINI_API_KEY=your_key_here" > .env
     node server.js
     ```
+    By default the backend only accepts requests from `https://viz-lens.vercel.app`
+    and `http://localhost:3000`/`3001`. If your frontend runs elsewhere, add an
+    `ALLOWED_ORIGINS` variable to `.env` (comma-separated list of origins).
 
 3.  **Setup Frontend**
     ```bash
     cd frontend
     npm install
-    # Set Metadata
     # (Optional) Update NEXT_PUBLIC_BACKEND_URL in .env.local if deploying
     npm run dev
     ```
