@@ -46,7 +46,7 @@ VIZ-LENS is a dual-engine educational tool designed to transform abstract concep
 
 1.  **Clone the repository**
     ```bash
-    git clone https://github.com/saket-nugget/VIZ-LENS.git
+    git clone https://github.com/saketrama-v/VIZ-LENS.git
     cd VIZ-LENS
     ```
 

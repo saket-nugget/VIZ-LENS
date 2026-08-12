@@ -7,15 +7,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/saket-nugget/VIZ-LENS.git"
+    "url": "git+https://github.com/saketrama-v/VIZ-LENS.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/saket-nugget/VIZ-LENS/issues"
+    "url": "https://github.com/saketrama-v/VIZ-LENS/issues"
   },
-  "homepage": "https://github.com/saket-nugget/VIZ-LENS#readme",
+  "homepage": "https://github.com/saketrama-v/VIZ-LENS#readme",
   "description": "",
   "dependencies": {
     "@google/genai": "^1.35.0",
