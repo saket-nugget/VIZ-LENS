@@ -42,6 +42,18 @@ async function main() {
     check('bad-runtime-error.html passes static (fails only at runtime)',
         runStaticChecks(fixture('bad-runtime-error.html')).pass);
 
+    // Forbidden-storage is scoped to <script> contents: mere mentions in
+    // display text or comments must not fail (or burn a repair attempt)
+    const mentionsStorage = `<html><body><canvas></canvas>
+        <div id="description-box">Unlike localStorage, this algorithm keeps state in memory.</div>
+        <!-- note: sessionStorage is unavailable in the sandbox -->
+        <button id="take-quiz-btn"></button>
+        <script>const state = { steps: [] };</script></body></html>`;
+    check('localStorage mentioned outside scripts passes', runStaticChecks(mentionsStorage).pass);
+    const usesStorage = mentionsStorage.replace('const state = { steps: [] };', 'localStorage.setItem("k","v");');
+    check('localStorage used inside a script still fails',
+        runStaticChecks(usesStorage).failures.some(f => f.check === 'forbidden-storage'));
+
     // --- Smoke test ---
     console.log('Smoke test:');
     const goodSmoke = await runSmokeTest(good);

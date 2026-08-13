@@ -48,19 +48,24 @@ function runStaticChecks(html) {
         fail('script', 'No <script> block found');
     }
 
+    let entityFailed = false;
+    let storageFailed = false;
     for (const script of scripts) {
         const code = script.rawText; // rawText preserves entities; .text decodes them
-        const entity = ESCAPED_ENTITIES.find(e => code.includes(e));
+        const entity = !entityFailed && ESCAPED_ENTITIES.find(e => code.includes(e));
         if (entity) {
             fail('escaped-entities', `Escaped HTML entity ${entity} inside <script> — breaks execution`);
-            break;
+            entityFailed = true;
         }
-    }
-
-    // These throw in the origin-less sandboxed iframe (sandbox="allow-scripts")
-    const forbidden = FORBIDDEN_STORAGE.find(f => html.includes(f));
-    if (forbidden) {
-        fail('forbidden-storage', `Uses ${forbidden}, which throws in the origin-less iframe`);
+        // These throw in the origin-less sandboxed iframe (sandbox="allow-scripts").
+        // Script contents only — a viz that merely *mentions* localStorage in
+        // display text or a comment runs fine and must not burn a repair attempt.
+        const forbidden = !storageFailed && FORBIDDEN_STORAGE.find(f => code.includes(f));
+        if (forbidden) {
+            fail('forbidden-storage', `Uses ${forbidden} in <script>, which throws in the origin-less iframe`);
+            storageFailed = true;
+        }
+        if (entityFailed && storageFailed) break;
     }
 
     return { pass: failures.length === 0, failures };
