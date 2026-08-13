@@ -1,17 +1,17 @@
 "use client";
 
-import { useRef } from "react";
+import { type Ref } from "react";
 
 type VisualizerProps = {
   html: string;
+  // Exposed so pages can verify postMessage events came from this iframe
+  ref?: Ref<HTMLIFrameElement>;
 };
 
-export default function Visualizer({ html }: VisualizerProps) {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-
+export default function Visualizer({ html, ref }: VisualizerProps) {
   return (
     <iframe
-      ref={iframeRef}
+      ref={ref}
       // No allow-same-origin: paired with allow-scripts it would give the
       // generated code a same-origin document and disable the sandbox entirely.
       sandbox="allow-scripts"

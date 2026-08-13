@@ -7,6 +7,7 @@ import Quiz from "../../components/Quiz";
 import CodeJudge from "../../components/CodeJudge";
 import { BookOpen, Share2 } from "lucide-react";
 import { readLibrary, addToLibrary, updateQuizScore } from "../../lib/library";
+import { useStartQuizListener } from "../../lib/useStartQuizListener";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3000";
 
@@ -21,7 +22,10 @@ export default function SharedVizPage() {
   const [toast, setToast] = useState<string | null>(null);
 
   const quizRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useStartQuizListener(iframeRef, quizRef);
 
   const showToast = (message: string, ms: number) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -34,24 +38,6 @@ export default function SharedVizPage() {
       .writeText(window.location.href)
       .then(() => showToast("Link copied", 2000));
   };
-
-  // Generated visualizations post START_QUIZ from the sandboxed iframe
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data === "START_QUIZ") {
-        const el = quizRef.current;
-        if (!el) return;
-        const beforeY = window.scrollY;
-        el.scrollIntoView({ behavior: "smooth" });
-        // Smooth scroll silently no-ops in some embedded Chromium contexts
-        setTimeout(() => {
-          if (window.scrollY === beforeY) el.scrollIntoView();
-        }, 400);
-      }
-    };
-    window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
-  }, []);
 
   useEffect(() => {
     const fetchViz = async () => {
@@ -141,7 +127,7 @@ export default function SharedVizPage() {
         </div>
       )}
 
-      <Visualizer html={html} />
+      <Visualizer html={html} ref={iframeRef} />
 
       {query && (
         <div ref={quizRef} className="container mx-auto px-4 pb-20">
