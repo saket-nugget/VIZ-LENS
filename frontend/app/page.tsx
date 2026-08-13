@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { BookOpen, Database, ArrowRight, Search, Upload } from "lucide-react";
+import { BookOpen, Database, ArrowRight, Search, Upload, Library } from "lucide-react";
 
 export default function Home() {
   const router = useRouter();
@@ -20,6 +20,20 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#0D1117] text-white flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans">
+
+      <button
+        onClick={() => router.push('/library')}
+        className="absolute top-6 right-6 z-10
+                   px-4 py-2 rounded-xl flex items-center gap-2
+                   bg-white/10 backdrop-blur-sm
+                   border border-white/20
+                   text-white font-medium text-sm
+                   hover:bg-white/20 hover:border-white/30
+                   transition-all duration-200
+                   shadow-lg"
+      >
+        <Library size={16} /> My Library
+      </button>
 
       {/* Dynamic Background Elements */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">

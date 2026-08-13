@@ -8,9 +8,26 @@ const multer = require('multer');
 const fs = require('fs');
 const csv = require('csv-parser');
 const upload = multer({ dest: 'uploads/' });
+const { verify, initBrowser, VerificationError } = require('./verifier');
+const { shouldSkipCache, normalizeQuery, lookupCache, quizWithFallback } = require('./cache');
+const db = require('./db');
+const { nanoid } = require('nanoid');
+const { createRateLimiter } = require('./rateLimit');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const VERIFY_ENABLED = process.env.VERIFY === '1';
+const CACHE_ENABLED = process.env.CACHE === '1';
+
+// Bump on any Master Engine prompt edit — old cache rows are excluded from
+// lookup (kept for analytics) because lookups filter on prompt_version.
+// v2: added canvas resize-safety rule (zero-size guard).
+const PROMPT_VERSION = 'v2';
+
+// Model routing policy: Flash for viz generation + repair ONLY; Flash-Lite for
+// all structured-JSON tasks (separate free-tier quota pool per model).
+const VIZ_MODEL = 'gemini-3-flash-preview';
+const JSON_MODEL = 'gemini-3.1-flash-lite';
 
 // Render (and most PaaS hosts) sit behind a reverse proxy. Without this,
 // every request looks like it comes from the same IP, which breaks the
@@ -93,6 +110,47 @@ async function generateWithRetry(modelName, prompt, config = {}) {
     throw new Error(`All ${uniqueKeys.length} API keys have exhausted their quota.`);
 }
 
+// Single embedding model per project policy — no substitutes.
+// (Spec named text-embedding-004, but the API retired it; gemini-embedding-001
+// at 768 dims matches the vector(768) schema.)
+async function embedQuery(text) {
+    const client = getClient();
+    const response = await client.models.embedContent({
+        model: 'gemini-embedding-001',
+        contents: text,
+        config: { outputDimensionality: 768 },
+    });
+    return response.embeddings[0].values;
+}
+
+// Insert a verified visualization into the shared cache. Returns the slug, or null.
+async function insertVerifiedIntoCache({ query, html, repaired, embedding }) {
+    const slug = nanoid(8);
+    const normalized = normalizeQuery(query);
+    const ok = await db.insertVizCache({
+        slug,
+        query_raw: query,
+        query_normalized: normalized,
+        topic: normalized, // placeholder until topic extraction lands
+        embedding,
+        html,
+        prompt_version: PROMPT_VERSION,
+        repaired,
+    });
+    return ok ? slug : null;
+}
+
+function extractResponseText(response) {
+    if (response.candidates && response.candidates.length > 0 && response.candidates[0].content && response.candidates[0].content.parts && response.candidates[0].content.parts.length > 0) {
+        return response.candidates[0].content.parts[0].text;
+    } else if (typeof response.text === 'function') {
+        return response.text();
+    } else if (response.text) {
+        return response.text;
+    }
+    throw new Error("Unknown response structure: " + JSON.stringify(response));
+}
+
 // Middleware
 // Defaults keep the live frontend + local dev working even if ALLOWED_ORIGINS
 // is never set on the host. Override via env for other deployments.
@@ -149,6 +207,34 @@ app.post('/api/generate', async (req, res) => {
             return res.status(400).json({ error: "Query is required" });
         }
 
+        // Contract: requests with user context/code never read or write the shared cache
+        const cacheUsable = CACHE_ENABLED && !shouldSkipCache(req.body);
+        let missEmbedding = null;
+
+        if (cacheUsable) {
+            try {
+                const { hit, matchType, embedding } = await lookupCache({
+                    query,
+                    promptVersion: PROMPT_VERSION,
+                    embed: embedQuery,
+                });
+                if (hit) {
+                    console.log(`[cache] ${matchType} hit for "${normalizeQuery(query)}" (slug ${hit.slug})`);
+                    db.incrementHitCount(hit); // fire-and-forget
+                    return res.json({
+                        html: hit.html,
+                        verified: true, // only verified HTML is ever inserted
+                        repaired: hit.repaired,
+                        slug: hit.slug,
+                        cached: true,
+                    });
+                }
+                missEmbedding = embedding; // reused for the insert after verify
+            } catch (cacheError) {
+                console.error('[cache] Lookup failed, generating normally:', cacheError.message);
+            }
+        }
+
         const systemPrompt = `**Role:** You are the VIZ-LENS Master Engine. You generate "AI-Native" Interactive Intuition Engines. You transform Code, Math, or Data into a premium, responsive HTML5 application.
 
 **[TARGET INPUT]**
@@ -182,26 +268,52 @@ Every file MUST include these four sections exactly:
 - Theme: Dark Slate (#0f172a) with Glassmorphism.
 - Colors: Primary Blue (#00d1ff) for pointers, Success Green (#22c55e) for positive results, Danger Red (#ef4444) for conflicts.
 - Canvas Logic: Use ctx.save() and ctx.restore(). Use bar charts, trees, or coordinate planes based on the topic.
+- Resize Safety: any resize handler MUST skip when canvas.offsetWidth or canvas.offsetHeight is 0. Never set the canvas buffer to zero — a resize while hidden must leave the canvas untouched, or it will stay blank forever.
 
 **[OUTPUT REQUIREMENT]**
 Return a complete, self-contained HTML document with inline CSS + inline JS.`;
 
 
-        const response = await generateWithRetry('gemini-3-flash-preview', systemPrompt);
+        const response = await generateWithRetry(VIZ_MODEL, systemPrompt);
+        const html = extractResponseText(response);
 
-        let html = "";
-        // Prioritize candidates array as seen in logs
-        if (response.candidates && response.candidates.length > 0 && response.candidates[0].content && response.candidates[0].content.parts && response.candidates[0].content.parts.length > 0) {
-            html = response.candidates[0].content.parts[0].text;
-        } else if (typeof response.text === 'function') {
-            html = response.text();
-        } else if (response.text) {
-            html = response.text;
-        } else {
-            throw new Error("Unknown response structure: " + JSON.stringify(response));
+        if (VERIFY_ENABLED) {
+            try {
+                const result = await verify(html, {
+                    query,
+                    generate: async (prompt) =>
+                        extractResponseText(await generateWithRetry(VIZ_MODEL, prompt)),
+                });
+                // Only verified HTML may enter the shared cache
+                let slug = null;
+                if (cacheUsable && missEmbedding) {
+                    slug = await insertVerifiedIntoCache({
+                        query,
+                        html: result.html,
+                        repaired: result.repaired,
+                        embedding: missEmbedding,
+                    });
+                }
+                return res.json({
+                    html: result.html,
+                    verified: true,
+                    repaired: result.repaired,
+                    slug,
+                    cached: false,
+                });
+            } catch (verifyError) {
+                if (verifyError instanceof VerificationError) {
+                    console.error("Verification failed:", verifyError.message);
+                    return res.status(422).json({
+                        error: "That one didn't compile on our end. Try again or rephrase your topic.",
+                    });
+                }
+                throw verifyError;
+            }
         }
 
-        res.json({ html });
+        // Unverified output is never cached
+        res.json({ html, verified: false, repaired: false, slug: null, cached: false });
 
     } catch (error) {
         console.error("Gemini API Error Details:", JSON.stringify(error, null, 2));
@@ -212,6 +324,21 @@ Return a complete, self-contained HTML document with inline CSS + inline JS.`;
 
         res.status(500).json({ error: "Failed to generate visualization", details: error.message });
     }
+});
+
+// Shared visualization by slug (public, read-only, rate-limited)
+const shareLimiter = createRateLimiter({ limit: 30, windowMs: 60_000 });
+
+app.get('/api/viz/:slug', async (req, res) => {
+    if (!shareLimiter(req.ip)) {
+        return res.status(429).json({ error: "Too many requests — try again in a minute." });
+    }
+    const row = await db.getCacheBySlug(req.params.slug);
+    if (!row) {
+        return res.status(404).json({ error: "Visualization not found" });
+    }
+    db.logShareOpen(req.params.slug); // fire-and-forget growth analytics
+    res.json({ html: row.html, query_raw: row.query_raw, created_at: row.created_at });
 });
 
 // Quiz Generation Route
@@ -261,31 +388,22 @@ OUTPUT JSON SCHEMA:
 
 
 
-        const response = await generateWithRetry('gemini-3-flash-preview', quizPrompt, {
-            responseMimeType: 'application/json'
+        // Fresh-first with cached fallback: parse failures count as generation
+        // failures so they fall back to the stored quiz too
+        const { quiz, fallback } = await quizWithFallback({
+            topic,
+            enabled: CACHE_ENABLED,
+            generate: async () => {
+                const response = await generateWithRetry(JSON_MODEL, quizPrompt, {
+                    responseMimeType: 'application/json'
+                });
+                const text = extractResponseText(response)
+                    .replace(/```json/g, '').replace(/```/g, '').trim();
+                return JSON.parse(text);
+            },
         });
 
-        let quizData = [];
-        try {
-            let text = "";
-            if (response.candidates && response.candidates.length > 0 && response.candidates[0].content && response.candidates[0].content.parts && response.candidates[0].content.parts.length > 0) {
-                text = response.candidates[0].content.parts[0].text;
-            } else if (typeof response.text === 'function') {
-                text = response.text();
-            } else if (response.text) {
-                text = response.text;
-            }
-
-            // Clean markdown if present
-            text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-            quizData = JSON.parse(text);
-
-        } catch (e) {
-            console.error("Failed to parse quiz JSON:", e);
-            return res.status(500).json({ error: "Failed to parse quiz data" });
-        }
-
-        res.json({ quiz: quizData });
+        res.json({ quiz, fallback });
 
     } catch (error) {
         console.error("Quiz API Error:", error);
@@ -332,7 +450,7 @@ DO NOT include explanations, markdown, or commentary outside JSON.
 }`;
 
 
-        const response = await generateWithRetry('gemini-3-flash-preview', judgePrompt, {
+        const response = await generateWithRetry(JSON_MODEL, judgePrompt, {
             responseMimeType: 'application/json'
         });
 
@@ -457,7 +575,7 @@ app.post('/api/upload-dataset', upload.single('file'), async (req, res) => {
   }
 }`;
 
-        const response = await generateWithRetry('gemini-3-flash-preview', prompt, {
+        const response = await generateWithRetry(JSON_MODEL, prompt, {
             responseMimeType: 'application/json'
         });
 
@@ -514,7 +632,7 @@ app.post('/api/ask-dataset', async (req, res) => {
   "follow_up": "One more thing they could ask."
 }`;
 
-        const response = await generateWithRetry('gemini-3-flash-preview', prompt, {
+        const response = await generateWithRetry(JSON_MODEL, prompt, {
             responseMimeType: 'application/json'
         });
 
@@ -538,4 +656,10 @@ app.post('/api/ask-dataset', async (req, res) => {
 // Start Server
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    if (VERIFY_ENABLED) {
+        // Launch the singleton browser at boot so the first check has no cold start
+        initBrowser()
+            .then(() => console.log('Verifier browser ready'))
+            .catch(err => console.error('Failed to launch verifier browser:', err.message));
+    }
 });

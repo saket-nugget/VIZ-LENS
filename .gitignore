@@ -1,6 +1,7 @@
 **/node_modules
 **/.env
 .DS_Store
+.claude/
 
 # Private strategy docs, pitch material and reference assets
 DONT PUSH/

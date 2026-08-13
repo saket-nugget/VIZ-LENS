@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 interface Question {
     question: string;
@@ -13,7 +13,7 @@ interface Question {
 
 interface QuizProps {
     topic: string;
-    onComplete: () => void;
+    onComplete: (score: number) => void;
 }
 
 export default function Quiz({ topic, onComplete }: QuizProps) {
@@ -27,7 +27,13 @@ export default function Quiz({ topic, onComplete }: QuizProps) {
 
     const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3000";
 
+    const lastTopic = useRef<string | null>(null);
+
     useEffect(() => {
+        // Prevent double-fetch in React Strict Mode — each quiz costs a Gemini call
+        if (topic === lastTopic.current) return;
+        lastTopic.current = topic;
+
         setLoading(true);
         setQuestions([]);
         setCurrentQuestion(0);
@@ -81,7 +87,7 @@ export default function Quiz({ topic, onComplete }: QuizProps) {
             setShowExplanation(false);
         } else {
             setQuizCompleted(true);
-            onComplete();
+            onComplete(score);
         }
     };
 
@@ -107,7 +113,7 @@ export default function Quiz({ topic, onComplete }: QuizProps) {
                     You scored {score} out of {questions.length}
                 </p>
                 <button
-                    onClick={onComplete}
+                    onClick={() => onComplete(score)}
                     className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
                 >
                     Proceed to Code Challenge

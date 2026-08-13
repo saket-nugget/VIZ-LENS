@@ -5,8 +5,10 @@ import { useEffect, useState, useRef, Suspense } from "react";
 import Visualizer from "../components/visualizer";
 import Quiz from "../components/Quiz";
 import CodeJudge from "../components/CodeJudge";
-import { ArrowLeft, Search, BookOpen } from "lucide-react";
+import { ArrowLeft, Search, BookOpen, Share2 } from "lucide-react";
 import { motion } from "framer-motion";
+import { addToLibrary, updateQuizScore } from "../lib/library";
+import { useStartQuizListener } from "../lib/useStartQuizListener";
 
 function LoadingState() {
   return (
@@ -27,8 +29,28 @@ function VizContent() {
   const [error, setError] = useState("");
   const [showJudge, setShowJudge] = useState(false);
   const [searchInput, setSearchInput] = useState("");
+  const [slug, setSlug] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   const lastQuery = useRef<string | null>(null);
+  const quizRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useStartQuizListener(iframeRef, quizRef);
+
+  const showToast = (message: string, ms: number) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast(message);
+    toastTimer.current = setTimeout(() => setToast(null), ms);
+  };
+
+  const handleShare = () => {
+    if (!slug) return;
+    navigator.clipboard
+      .writeText(`${window.location.origin}/v/${slug}`)
+      .then(() => showToast("Link copied", 2000));
+  };
 
   // Handle Search Submit from Empty State
   const handleSearch = (e: React.FormEvent) => {
@@ -51,6 +73,7 @@ function VizContent() {
     lastQuery.current = query;
     setLoading(true); // Reset loading on new query
     setError(""); // Reset error
+    setSlug(null); // Reset share state on new query
 
     const fetchVisualization = async () => {
       try {
@@ -68,6 +91,19 @@ function VizContent() {
 
         console.log("HTML received:", data.html);
         setHtml(data.html);
+        setSlug(data.slug ?? null);
+        if (data.slug) {
+          addToLibrary({
+            slug: data.slug,
+            query,
+            topic: query,
+            date: new Date().toISOString(),
+            quizScore: null,
+          });
+        }
+        if (data.cached) {
+          showToast("⚡ served from memory", 1000);
+        }
         setLoading(false);
       } catch (err: unknown) {
         console.error(err);
@@ -163,27 +199,51 @@ function VizContent() {
   // --- STATE 4: Success (Visualizer + Quiz + Judge) ---
   return (
     <div className="w-full min-h-screen bg-[#0D1117]">
-      <button
-        onClick={() => router.push('/')}
-        className="absolute top-6 left-6 z-10 
-                   px-4 py-2 rounded-xl flex items-center gap-2
-                   bg-white/10 backdrop-blur-sm
-                   border border-white/20
-                   text-white font-medium text-sm
-                   hover:bg-white/20 hover:border-white/30
-                   transition-all duration-200
-                   shadow-lg"
-      >
-        <ArrowLeft size={16} /> Home
-      </button>
+      {/* Header bar instead of overlays: generated HTML controls its own
+          full-width layout, so floating buttons collide with its content */}
+      <div className="w-full flex items-center justify-between px-6 py-3 bg-white/5 border-b border-white/10">
+        <button
+          onClick={() => router.push('/')}
+          className="px-4 py-2 rounded-xl flex items-center gap-2
+                     bg-white/10 border border-white/20
+                     text-white font-medium text-sm
+                     hover:bg-white/20 hover:border-white/30
+                     transition-all duration-200"
+        >
+          <ArrowLeft size={16} /> Home
+        </button>
+        {slug && (
+          <button
+            onClick={handleShare}
+            className="px-4 py-2 rounded-xl flex items-center gap-2
+                       bg-white/10 border border-white/20
+                       text-white font-medium text-sm
+                       hover:bg-white/20 hover:border-white/30
+                       transition-all duration-200"
+          >
+            <Share2 size={16} /> Share
+          </button>
+        )}
+      </div>
 
-      <Visualizer html={html} />
+      {toast && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl
+                        bg-white/10 backdrop-blur-md border border-white/20
+                        text-white text-sm shadow-lg">
+          {toast}
+        </div>
+      )}
 
-      <div className="container mx-auto px-4 pb-20">
+      <Visualizer html={html} ref={iframeRef} />
+
+      <div ref={quizRef} className="container mx-auto px-4 pb-20">
         {!showJudge ? (
           <Quiz
             topic={query}
-            onComplete={() => setShowJudge(true)}
+            onComplete={(score) => {
+              if (slug) updateQuizScore(slug, score);
+              setShowJudge(true);
+            }}
           />
         ) : (
           <CodeJudge topic={query} />
