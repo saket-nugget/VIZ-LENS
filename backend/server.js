@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 const bodyParser = require('body-parser');
 const { GoogleGenAI } = require("@google/genai");
 const multer = require('multer');
@@ -14,8 +15,6 @@ const { nanoid } = require('nanoid');
 const { createRateLimiter } = require('./rateLimit');
 
 const app = express();
-// Behind Render's proxy: trust X-Forwarded-For so req.ip is the real client IP
-app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
 const VERIFY_ENABLED = process.env.VERIFY === '1';
 const CACHE_ENABLED = process.env.CACHE === '1';
@@ -29,6 +28,11 @@ const PROMPT_VERSION = 'v2';
 // all structured-JSON tasks (separate free-tier quota pool per model).
 const VIZ_MODEL = 'gemini-3-flash-preview';
 const JSON_MODEL = 'gemini-3.1-flash-lite';
+
+// Render (and most PaaS hosts) sit behind a reverse proxy. Without this,
+// every request looks like it comes from the same IP, which breaks the
+// rate limiter below (it would throttle all users as one).
+app.set('trust proxy', 1);
 
 // Initialize Gemini
 // Initialize Gemini
@@ -148,14 +152,41 @@ function extractResponseText(response) {
 }
 
 // Middleware
-app.use(cors());
+// Defaults keep the live frontend + local dev working even if ALLOWED_ORIGINS
+// is never set on the host. Override via env for other deployments.
+const allowedOrigins = (process.env.ALLOWED_ORIGINS ||
+    "https://viz-lens.vercel.app,http://localhost:3000,http://localhost:3001")
+    .split(",").map((origin) => origin.trim()).filter(Boolean);
+
+app.use(cors({
+    origin(origin, callback) {
+        // No Origin header = server-to-server / curl / health checks — allow.
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.includes(origin)) return callback(null, true);
+        // Vercel preview deployments get a random subdomain per build.
+        if (/^https:\/\/viz-lens-[a-z0-9-]+\.vercel\.app$/.test(origin)) {
+            return callback(null, true);
+        }
+        callback(new Error("Not allowed by CORS"));
+    }
+}));
 app.use(bodyParser.json());
 
-// Debug Middleware: Log all requests
+// Rate limit the API routes — CORS only stops browser JS from other sites;
+// it does nothing against curl/Postman/scripts. This is what actually caps
+// Gemini quota usage per client.
+app.use('/api/', rateLimit({
+    windowMs: 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many requests — please wait a minute and try again." },
+}));
+
+// Debug Middleware: Log requests (method + URL only — headers/body can
+// contain uploaded CSV rows or pasted user code, so they never get logged).
 app.use((req, res, next) => {
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-    console.log('Headers:', JSON.stringify(req.headers, null, 2));
-    console.log('Body:', JSON.stringify(req.body, null, 2));
     next();
 });
 
