@@ -5,8 +5,24 @@ const defaultDb = require('./db');
 const SERVE_THRESHOLD = 0.90;
 const NEAR_MISS_THRESHOLD = 0.80;
 
+// Filler words that don't change the concept: "bubble sort algorithm",
+// "visualize bubble sort" and "bubble sort" should share one cache key.
+// Deliberately conservative — no articles ("a star algorithm" must not
+// collapse into "star") and nothing that could distinguish two concepts.
+const FILLER_WORDS = new Set([
+    'visualize', 'visualise', 'visualization', 'visualisation', 'visualizing',
+    'explain', 'explained', 'show', 'me', 'please', 'demo',
+    'animation', 'animated', 'algorithm', 'algorithms', 'teach', 'learn',
+]);
+
 function normalizeQuery(query) {
-    return query.trim().toLowerCase().replace(/\s+/g, ' ');
+    const base = query.trim().toLowerCase().replace(/\s+/g, ' ');
+    const stripped = base
+        .split(' ')
+        .filter((word) => !FILLER_WORDS.has(word))
+        .join(' ');
+    // A query made entirely of filler ("visualization") keeps its base form
+    return stripped || base;
 }
 
 // Contract: requests carrying user context/code never touch the shared cache.

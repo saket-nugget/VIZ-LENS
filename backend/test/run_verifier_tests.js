@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { runStaticChecks, runSmokeTest, verify, closeBrowser, VerificationError } = require('../verifier');
+const { runStaticChecks, runSmokeTest, verify, closeBrowser, VerificationError, hasCommandBridge } = require('../verifier');
 const { normalizeQuery, shouldSkipCache, lookupCache, quizWithFallback } = require('../cache');
 const { createRateLimiter } = require('../rateLimit');
 
@@ -103,6 +103,15 @@ async function main() {
 
     check('normalizeQuery trims, lowercases, collapses whitespace',
         normalizeQuery('  Bubble   SORT \n algo  ') === 'bubble sort algo');
+    check('filler words strip to one cache key',
+        normalizeQuery('Bubble Sort Algorithm') === 'bubble sort' &&
+        normalizeQuery('visualize bubble sort') === 'bubble sort' &&
+        normalizeQuery('show me bubble sort please') === 'bubble sort');
+    check('articles are not stripped (A* stays distinct from star)',
+        normalizeQuery('a star algorithm') === 'a star' &&
+        normalizeQuery('a star') !== normalizeQuery('star'));
+    check('all-filler query keeps its base form',
+        normalizeQuery('  Visualization ') === 'visualization');
 
     check('shouldSkipCache: plain query uses cache', shouldSkipCache({ query: 'x' }) === false);
     check('shouldSkipCache: context field skips cache', shouldSkipCache({ query: 'x', context: 'notes' }) === true);
@@ -171,6 +180,15 @@ async function main() {
     });
     check('embed failure degrades to a miss without throwing',
         embedFails.hit === null && embedFails.embedding === null);
+
+    // --- Bridge telemetry detection (soft check, never pass/fail) ---
+    console.log('Bridge detection:');
+    check('message listener in a script detects as bridge',
+        hasCommandBridge('<html><body><script>window.addEventListener("message", (e) => {});</script></body></html>'));
+    check('no message listener detects as absent',
+        !hasCommandBridge('<html><body><script>const x = 1;</script></body></html>'));
+    check('mention of onmessage outside scripts does not count',
+        !hasCommandBridge('<html><body><div>uses onmessage</div><script>const x = 1;</script></body></html>'));
 
     // --- Quiz fresh-first with stored fallback (mocked db + generate) ---
     console.log('Quiz fallback:');
