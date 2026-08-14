@@ -117,6 +117,21 @@ async function logShareOpen(slug) {
     }
 }
 
+// Generic feature telemetry (feature_events table) — one helper for all
+// streams; add event names, not tables. Fire-and-forget, never blocks.
+async function logEvent(name, payload = {}) {
+    if (!supabase) {
+        console.log(`[event] ${name}`, JSON.stringify(payload));
+        return;
+    }
+    try {
+        const { error } = await supabase.from('feature_events').insert({ name, payload });
+        if (error) console.error('[db] logEvent failed:', error.message);
+    } catch (e) {
+        console.error('[db] logEvent failed:', e.message);
+    }
+}
+
 // Quiz storage lives on the topic's cache row. Deliberately NOT filtered by
 // prompt_version: quiz content depends on the topic, not the viz prompt, so
 // older rows still provide a usable fallback.
@@ -178,4 +193,5 @@ module.exports = {
     logShareOpen,
     getQuizCacheRow,
     storeQuizOnCacheRow,
+    logEvent,
 };

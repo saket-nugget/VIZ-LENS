@@ -2,7 +2,7 @@
 // Stage 1: static checks. Stage 2: Puppeteer smoke test. One repair attempt on failure.
 const { parse } = require('node-html-parser');
 const puppeteer = require('puppeteer');
-const { logGenerationFailure } = require('./db');
+const { logGenerationFailure, logEvent } = require('./db');
 
 // Gemini sometimes wraps output in markdown fences despite instructions.
 function stripCodeFences(html) {
@@ -141,6 +141,28 @@ async function runSmokeTest(html) {
     }
 }
 
+// --- Stream C bridge telemetry (soft — NEVER a pass/fail check) ---
+// Detects whether the generated code registers a window message listener,
+// i.e. can accept commands like "jump to step N". Logged for compliance
+// data only; a missing bridge must not fail verification or burn repairs.
+// Stream C: extend these markers with the v3 bridge contract as it lands.
+const BRIDGE_MARKERS = [
+    'addEventListener("message"',
+    "addEventListener('message'",
+    'onmessage',
+];
+
+function hasCommandBridge(html) {
+    let root;
+    try {
+        root = parse(html);
+    } catch {
+        return false;
+    }
+    return root.querySelectorAll('script')
+        .some(s => BRIDGE_MARKERS.some(m => s.rawText.includes(m)));
+}
+
 // --- Verify + single repair attempt ---
 
 class VerificationError extends Error {
@@ -191,6 +213,7 @@ async function verify(rawHtml, { query, generate }) {
 
     const failure = await runChecks(html);
     if (!failure) {
+        logEvent('bridge_check', { query, present: hasCommandBridge(html), repaired: false });
         return { html, verified: true, repaired: false };
     }
     await logGenerationFailure({ query, stage: failure.stage, error: failure.error, repaired: false });
@@ -205,6 +228,7 @@ async function verify(rawHtml, { query, generate }) {
 
     const repairFailure = await runChecks(repairedHtml);
     if (!repairFailure) {
+        logEvent('bridge_check', { query, present: hasCommandBridge(repairedHtml), repaired: true });
         return { html: repairedHtml, verified: true, repaired: true };
     }
     await logGenerationFailure({
@@ -224,4 +248,5 @@ module.exports = {
     runSmokeTest,
     verify,
     VerificationError,
+    hasCommandBridge,
 };
