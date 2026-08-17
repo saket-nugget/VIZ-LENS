@@ -22,7 +22,11 @@ const CACHE_ENABLED = process.env.CACHE === '1';
 // Bump on any Master Engine prompt edit — old cache rows are excluded from
 // lookup (kept for analytics) because lookups filter on prompt_version.
 // v2: added canvas resize-safety rule (zero-size guard).
-const PROMPT_VERSION = 'v2';
+// v3: added the parent bridge (VL_READY/VL_STEP/VL_GOTO_STEP) so the quiz can
+// ground itself in the real walkthrough and be gated behind actual
+// completion. Optional/best-effort — the verifier does not require it, and
+// both the frontend gate and /api/quiz work correctly without it.
+const PROMPT_VERSION = 'v3';
 
 // Model routing policy: Flash for viz generation + repair ONLY; Flash-Lite for
 // all structured-JSON tasks (separate free-tier quota pool per model).
@@ -264,7 +268,20 @@ Every file MUST include these four sections exactly:
 
 **[QUIZ HANDOFF]**
 - Include a <button id="take-quiz-btn">Take the Quiz</button> that activates only at the final step.
-- Action: window.parent.postMessage("START_QUIZ", "*");
+- Action on click — post BOTH of these (older clients only understand the first):
+  window.parent.postMessage("START_QUIZ", "*");
+  window.parent.postMessage({type:"VL_QUIZ_REQUEST"}, "*");
+
+**[PARENT BRIDGE — best effort, do not let this block anything else]**
+- Once your step data is built (on load): window.parent.postMessage({type:"VL_READY",
+  totalSteps:N, steps:[{n:1,label:"short description of step 1"}, ...]}, "*")
+  — one entry per step, N total.
+- Every time the current step changes (Next/Prev/slider/autoplay):
+  window.parent.postMessage({type:"VL_STEP", step:current, totalSteps:N}, "*")
+- Add a window message listener: if (event.data && event.data.type === "VL_GOTO_STEP")
+  jump your internal state to event.data.step and redraw, exactly as your Next/Prev
+  buttons would.
+- These three are IN ADDITION to the [QUIZ HANDOFF] messages above, not a replacement.
 
 **[VISUAL & LOGIC RULES]**
 - Theme: Dark Slate (#0f172a) with Glassmorphism.
@@ -343,20 +360,54 @@ app.get('/api/viz/:slug', async (req, res) => {
     res.json({ html: row.html, query_raw: row.query_raw, created_at: row.created_at });
 });
 
+// Generic frontend telemetry (Stream C: quiz_unlocked, quiz_unreachable_fallback, ...).
+// Writes to feature_events via the shared logEvent helper — add event names on the
+// frontend, not new routes or tables. Falls under the global /api/ rate limit.
+app.post('/api/event', (req, res) => {
+    const { name, payload } = req.body || {};
+    if (!name || typeof name !== 'string') {
+        return res.status(400).json({ error: "Event name is required" });
+    }
+    db.logEvent(name, payload || {}); // fire-and-forget — telemetry never blocks the UI
+    res.json({ ok: true });
+});
+
 // Quiz Generation Route
 app.post('/api/quiz', async (req, res) => {
     try {
-        const { topic } = req.body;
+        const { topic, steps } = req.body;
 
         if (!topic) {
             return res.status(400).json({ error: "Topic is required" });
         }
+
+        // Stream C: the viz's real step manifest (from the v3 parent bridge), if the
+        // frontend captured one. Absent for legacy visualizations — falls back to the
+        // original topic-only prompt below, unchanged.
+        const stepManifest = Array.isArray(steps)
+            ? steps.filter((s) => s && typeof s.n === 'number' && typeof s.label === 'string')
+            : [];
+        const validStepNumbers = new Set(stepManifest.map((s) => s.n));
+
+        const stepsBlock = stepManifest.length > 0 ? `
+
+THE STUDENT JUST WATCHED THESE STEPS:
+${stepManifest.map((s) => `${s.n}. ${s.label}`).join('\n')}
+- Base questions on THESE steps, their notation and example values.
+- At least 2 questions MUST set "step" to the step number that provides context
+  for that question.
+- CRITICAL: "step" must show the state BEFORE the answer — never a step that
+  reveals it. For a "predict what happens next" question, anchor to the step
+  immediately BEFORE the change happens.
+- Conceptual questions (e.g. time/space complexity) set "step" to null.` : `
+- Set "step" to null on every question (no step manifest was provided).`;
 
         const quizPrompt = `Role: You are the VIZ-LENS Quizmaster.
 Generate a premium, readable, conceptual quiz that matches the VIZ-LENS dark-glass UI.
 
 TARGET TOPIC:
 ${topic}
+${stepsBlock}
 
 RULES:
 - Output STRICT JSON ONLY (no markdown, no backticks, no extra text).
@@ -390,7 +441,8 @@ OUTPUT JSON SCHEMA:
       "explanation": "string",
       "optionFeedback": {
         "<exact option string>": "why this option is correct or incorrect"
-      }
+      },
+      "step": "number matching one of the steps above, or null"
     }
   ]
 }`;
@@ -408,7 +460,18 @@ OUTPUT JSON SCHEMA:
                 });
                 const text = extractResponseText(response)
                     .replace(/```json/g, '').replace(/```/g, '').trim();
-                return JSON.parse(text);
+                const parsed = JSON.parse(text);
+                // Anti-spoiler / anti-hallucination: only trust a step anchor that is
+                // actually inside the manifest THIS request sent. A stored fallback
+                // quiz from a different generation is a separate, later risk — handled
+                // client-side by clamping against the CURRENT viz's live step count.
+                if (Array.isArray(parsed?.questions)) {
+                    parsed.questions = parsed.questions.map((q) => ({
+                        ...q,
+                        step: typeof q.step === 'number' && validStepNumbers.has(q.step) ? q.step : null,
+                    }));
+                }
+                return parsed;
             },
         });
 

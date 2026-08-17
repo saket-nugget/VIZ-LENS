@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import type { StepInfo } from "../lib/useVizBridge";
 
 interface Question {
     question: string;
@@ -9,6 +10,7 @@ interface Question {
     correctIndex?: number;    // allow optional
     explanation: string;
     optionFeedback?: Record<string, string>; // per-option "why right/wrong"
+    step?: number | null;                    // anchors this question to a viz step
 }
 
 function shuffleArray<T>(items: T[]): T[] {
@@ -39,13 +41,30 @@ function shuffleQuestion(q: Question): Question {
     };
 }
 
+// A fallback quiz served from the cache may have been generated for a
+// DIFFERENT viz instance with different steps. Only trust a step anchor that
+// is actually one of THIS session's real step numbers, or the "show me"
+// button could jump to a step that doesn't exist.
+//
+// Deliberately membership-based, not a numeric range (e.g. 1..totalSteps):
+// generated visualizations are not guaranteed to number their steps from 1
+// — live testing showed a real generation numbering them from 0
+// (`steps.map((s, idx) => ({ n: idx, ... }))`). A range check would have
+// silently dropped every anchor to that visualization's first step.
+function clampQuestionStep(q: Question, validStepNumbers: Set<number>): Question {
+    const step = typeof q.step === "number" ? q.step : null;
+    const valid = step !== null && validStepNumbers.has(step);
+    return { ...q, step: valid ? step : null };
+}
 
 interface QuizProps {
     topic: string;
     onComplete: (score: number) => void;
+    steps?: StepInfo[];             // this viz's real step manifest, if known
+    onGotoStep?: (n: number) => void; // jumps the viz to a specific step
 }
 
-export default function Quiz({ topic, onComplete }: QuizProps) {
+export default function Quiz({ topic, onComplete, steps, onGotoStep }: QuizProps) {
     const [questions, setQuestions] = useState<Question[]>([]);
     const [loading, setLoading] = useState(true);
     const [currentQuestion, setCurrentQuestion] = useState(0);
@@ -53,6 +72,7 @@ export default function Quiz({ topic, onComplete }: QuizProps) {
     const [showExplanation, setShowExplanation] = useState(false);
     const [selectedOption, setSelectedOption] = useState<string | null>(null);
     const [quizCompleted, setQuizCompleted] = useState(false);
+    const [justJumpedStep, setJustJumpedStep] = useState<number | null>(null);
 
     const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3000";
 
@@ -70,22 +90,32 @@ export default function Quiz({ topic, onComplete }: QuizProps) {
         setShowExplanation(false);
         setSelectedOption(null);
         setQuizCompleted(false);
+        setJustJumpedStep(null);
 
         const fetchQuiz = async () => {
             try {
                 const res = await fetch(`${API_BASE_URL}/api/quiz`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ topic }),
+                    body: JSON.stringify(
+                        steps && steps.length > 0 ? { topic, steps } : { topic }
+                    ),
                 });
                 const data = await res.json();
 
                 const questionsArr = data?.quiz?.questions;
                 if (Array.isArray(questionsArr)) {
+                    const validStepNumbers = new Set((steps ?? []).map((s) => s.n));
                     // Shuffle on every fetch so cached/fallback quizzes (which may
                     // have been served with the same option order many times) get
-                    // a fresh order too, not just newly generated ones.
-                    setQuestions(questionsArr.map(shuffleQuestion));
+                    // a fresh order too, not just newly generated ones. Clamp step
+                    // anchors against THIS viz's real step numbers — a fallback
+                    // quiz can come from a different generation entirely.
+                    setQuestions(
+                        questionsArr
+                            .map(shuffleQuestion)
+                            .map((q) => clampQuestionStep(q, validStepNumbers))
+                    );
                 } else {
                     console.error("Invalid quiz format:", data);
                     setQuestions([]);
@@ -100,7 +130,7 @@ export default function Quiz({ topic, onComplete }: QuizProps) {
         };
 
         fetchQuiz();
-    }, [topic]);
+    }, [topic, steps]);
 
     const handleOptionClick = (option: string) => {
         if (selectedOption) return; // Prevent changing answer
@@ -117,6 +147,7 @@ export default function Quiz({ topic, onComplete }: QuizProps) {
             setCurrentQuestion(currentQuestion + 1);
             setSelectedOption(null);
             setShowExplanation(false);
+            setJustJumpedStep(null);
         } else {
             setQuizCompleted(true);
             onComplete(score);
@@ -163,6 +194,19 @@ export default function Quiz({ topic, onComplete }: QuizProps) {
             </div>
 
             <p className="text-lg text-gray-200 mb-6">{q.question}</p>
+
+            {typeof q.step === "number" && onGotoStep && (
+                <button
+                    onClick={() => {
+                        onGotoStep(q.step as number);
+                        setJustJumpedStep(q.step as number);
+                        setTimeout(() => setJustJumpedStep(null), 1500);
+                    }}
+                    className="mb-4 inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-300 hover:bg-blue-500/25 transition-colors"
+                >
+                    {justJumpedStep === q.step ? `Showing step ${q.step}` : `📍 Step ${q.step} · show me`}
+                </button>
+            )}
 
             <div className="space-y-3">
                 {q.options.map((option, idx) => (
