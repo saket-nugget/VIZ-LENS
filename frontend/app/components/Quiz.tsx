@@ -8,6 +8,35 @@ interface Question {
     correctAnswer?: string;   // allow optional
     correctIndex?: number;    // allow optional
     explanation: string;
+    optionFeedback?: Record<string, string>; // per-option "why right/wrong"
+}
+
+function shuffleArray<T>(items: T[]): T[] {
+    const result = [...items];
+    for (let i = result.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [result[i], result[j]] = [result[j], result[i]];
+    }
+    return result;
+}
+
+// Shuffles a question's options and resolves the correct answer to a plain
+// string BEFORE shuffling — correctIndex would otherwise point at the wrong
+// option post-shuffle. correctAnswer is matched by string value elsewhere,
+// so reordering options never breaks scoring once this normalization runs.
+function shuffleQuestion(q: Question): Question {
+    const resolvedCorrect =
+        typeof q.correctAnswer === "string"
+            ? q.correctAnswer
+            : typeof q.correctIndex === "number"
+                ? q.options[q.correctIndex]
+                : undefined;
+    return {
+        ...q,
+        options: shuffleArray(q.options),
+        correctAnswer: resolvedCorrect,
+        correctIndex: undefined,
+    };
 }
 
 
@@ -53,7 +82,10 @@ export default function Quiz({ topic, onComplete }: QuizProps) {
 
                 const questionsArr = data?.quiz?.questions;
                 if (Array.isArray(questionsArr)) {
-                    setQuestions(questionsArr);
+                    // Shuffle on every fetch so cached/fallback quizzes (which may
+                    // have been served with the same option order many times) get
+                    // a fresh order too, not just newly generated ones.
+                    setQuestions(questionsArr.map(shuffleQuestion));
                 } else {
                     console.error("Invalid quiz format:", data);
                     setQuestions([]);
@@ -156,7 +188,8 @@ export default function Quiz({ topic, onComplete }: QuizProps) {
             {showExplanation && (
                 <div className="mt-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
                     <p className="text-blue-200 text-sm">
-                        <span className="font-bold">Explanation:</span> {q.explanation}
+                        <span className="font-bold">Explanation:</span>{" "}
+                        {(selectedOption && q.optionFeedback?.[selectedOption]) || q.explanation}
                     </p>
                     <div className="mt-4 flex justify-end">
                         <button

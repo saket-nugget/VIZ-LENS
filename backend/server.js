@@ -368,6 +368,10 @@ RULES:
 - Keep explanation helpful but short (<= 220 chars).
 - Avoid overly academic wording; keep it crisp and intuitive.
 - Make distractor options plausible (not silly).
+- optionFeedback MUST have exactly one entry per option, keyed by the EXACT
+  option string. Each value explains why THAT specific option is correct or
+  incorrect (<= 140 chars) — a student who picks a wrong option should learn
+  why their reasoning was off, not just be told the right answer.
 
 QUESTION TYPES (in order):
 1) Identify a key variable/state used by the algorithm.
@@ -383,7 +387,10 @@ OUTPUT JSON SCHEMA:
       "question": "string",
       "options": ["string", "string", "string", "string"],
       "correctAnswer": "string",
-      "explanation": "string"
+      "explanation": "string",
+      "optionFeedback": {
+        "<exact option string>": "why this option is correct or incorrect"
+      }
     }
   ]
 }`;
