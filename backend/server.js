@@ -424,15 +424,15 @@ OUTPUT JSON SCHEMA:
 });
 
 // Judge/Compiler Route
-app.post('/api/judge', async (req, res) => {
-    try {
-        const { code, language, topic } = req.body;
+// Collapses all whitespace (including newlines) to single spaces before
+// substring matching, so indentation/line-break differences between the
+// judge's quoted text and the submitted code don't cause false negatives.
+function normalizeForMatch(s) {
+    return String(s || '').replace(/\s+/g, ' ').trim();
+}
 
-        if (!code || !topic) {
-            return res.status(400).json({ error: "Code and Topic are required" });
-        }
-
-        const judgePrompt = `**Role:** You are the VIZ-LENS Logic Judge. Your task is to provide pinpoint educational feedback on code logic.
+function buildJudgePrompt({ code, language, topic, retryHint }) {
+    return `**Role:** You are the VIZ-LENS Logic Judge. Your task is to provide pinpoint educational feedback on code logic.
 
 **[TARGET PROBLEM]**
 Algorithm / Concept: ${topic}
@@ -449,37 +449,81 @@ Compare the User's Code against the correct logical steps of the algorithm.
 1. Identify the FIRST line number where the logic deviates from the correct implementation.
 2. If the code is 100% correct, set "error_line" to 0.
 3. Explain *why* the logic is wrong using visualization-based intuition (e.g., pointer movement, bars, nodes, state transitions).
-
+4. If error_line > 0, set "offending_code" to the EXACT text of that line, copied
+   verbatim (same characters, same whitespace) from the user's code above — this is
+   how we verify you actually read that line rather than guessing a number. If
+   error_line is 0, set "offending_code" to an empty string.
+${retryHint || ''}
 **[OUTPUT FORMAT — STRICT JSON ONLY]**
 DO NOT include explanations, markdown, or commentary outside JSON.
 {
   "error_line": number,
   "reason": "string",
-  "visual_reference": "string"
+  "visual_reference": "string",
+  "offending_code": "string"
 }`;
+}
 
+app.post('/api/judge', async (req, res) => {
+    try {
+        const { code, language, topic } = req.body;
 
-        const response = await generateWithRetry(JSON_MODEL, judgePrompt, {
-            responseMimeType: 'application/json'
-        });
+        if (!code || !topic) {
+            return res.status(400).json({ error: "Code and Topic are required" });
+        }
 
-        let judgeData = {};
+        async function callJudge(retryHint) {
+            const response = await generateWithRetry(
+                JSON_MODEL,
+                buildJudgePrompt({ code, language, topic, retryHint }),
+                { responseMimeType: 'application/json' }
+            );
+            const text = extractResponseText(response)
+                .replace(/```json/g, '').replace(/```/g, '').trim();
+            return JSON.parse(text);
+        }
+
+        let judgeData;
         try {
-            let text = "";
-            if (response.candidates && response.candidates.length > 0 && response.candidates[0].content && response.candidates[0].content.parts && response.candidates[0].content.parts.length > 0) {
-                text = response.candidates[0].content.parts[0].text;
-            } else if (typeof response.text === 'function') {
-                text = response.text();
-            } else if (response.text) {
-                text = response.text;
-            }
-
-            text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-            judgeData = JSON.parse(text);
-
+            judgeData = await callJudge();
         } catch (e) {
             console.error("Failed to parse judge JSON:", e);
             return res.status(500).json({ error: "Failed to parse judge data" });
+        }
+
+        // Self-check: an error_line claim is only as trustworthy as the quoted
+        // line backing it. Never trust an LLM claim we can check mechanically —
+        // same philosophy as the verifier's static checks.
+        if (judgeData.error_line > 0) {
+            const normalizedCode = normalizeForMatch(code);
+            let verified = normalizeForMatch(judgeData.offending_code)
+                && normalizedCode.includes(normalizeForMatch(judgeData.offending_code));
+
+            if (!verified) {
+                try {
+                    const retryHint = `
+**[SELF-CHECK FAILED — RETRY]**
+Your previous "offending_code" was: ${JSON.stringify(judgeData.offending_code || '')}
+This text does not appear verbatim in the user's code above. Re-read the code
+carefully and copy the EXACT line text into "offending_code" this time.
+`;
+                    const retryData = await callJudge(retryHint);
+                    const retryVerified = normalizeForMatch(retryData.offending_code)
+                        && normalizedCode.includes(normalizeForMatch(retryData.offending_code));
+                    if (retryVerified) {
+                        judgeData = retryData; // trust the self-verified retry over the original
+                        verified = true;
+                    }
+                } catch (e) {
+                    console.error("Judge retry failed:", e.message);
+                    // Fall through with the original (unverified) diagnosis.
+                }
+            }
+
+            judgeData.confidence = verified ? 'high' : 'low';
+            if (!verified) {
+                db.logEvent('judge_low_confidence', { topic, language, error_line: judgeData.error_line });
+            }
         }
 
         res.json({ result: judgeData });
