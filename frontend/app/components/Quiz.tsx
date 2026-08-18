@@ -2,6 +2,15 @@
 
 import { useState, useEffect, useRef } from "react";
 import type { StepInfo } from "../lib/useVizBridge";
+import { logEvent } from "../lib/logEvent";
+
+type Confidence = "guess" | "fairly_sure" | "certain";
+
+const CONFIDENCE_LABELS: Record<Confidence, string> = {
+    guess: "Guess",
+    fairly_sure: "Fairly sure",
+    certain: "Certain",
+};
 
 interface Question {
     question: string;
@@ -73,6 +82,7 @@ export default function Quiz({ topic, onComplete, steps, onGotoStep }: QuizProps
     const [selectedOption, setSelectedOption] = useState<string | null>(null);
     const [quizCompleted, setQuizCompleted] = useState(false);
     const [justJumpedStep, setJustJumpedStep] = useState<number | null>(null);
+    const [confidence, setConfidence] = useState<Confidence | null>(null);
 
     const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3000";
 
@@ -91,6 +101,7 @@ export default function Quiz({ topic, onComplete, steps, onGotoStep }: QuizProps
         setSelectedOption(null);
         setQuizCompleted(false);
         setJustJumpedStep(null);
+        setConfidence(null);
 
         const fetchQuiz = async () => {
             try {
@@ -132,14 +143,26 @@ export default function Quiz({ topic, onComplete, steps, onGotoStep }: QuizProps
         fetchQuiz();
     }, [topic, steps]);
 
-    const handleOptionClick = (option: string) => {
-        if (selectedOption) return; // Prevent changing answer
+    // Selecting an option only highlights it — a confidence pill is the
+    // actual submit. The user can change their mind freely until they lock
+    // in, since committing without seeing right/wrong first is the point.
+    const handleSelectOption = (option: string) => {
+        if (showExplanation) return; // already locked in
         setSelectedOption(option);
-        setShowExplanation(true);
+    };
 
-        if (option === correct) {
+    // Confidence-weighted scoring is a deliberate non-goal — punishing
+    // confident errors gamifies badly. The score is unaffected by
+    // confidence; only the recorded telemetry (and later, the recap) uses it.
+    const handleConfirmConfidence = (level: Confidence) => {
+        if (!selectedOption || showExplanation) return;
+        const wasCorrect = selectedOption === correct;
+        setConfidence(level);
+        setShowExplanation(true);
+        if (wasCorrect) {
             setScore(score + 1);
         }
+        logEvent("confidence_recorded", { confidence: level, wasCorrect });
     };
 
     const handleNext = () => {
@@ -148,6 +171,7 @@ export default function Quiz({ topic, onComplete, steps, onGotoStep }: QuizProps
             setSelectedOption(null);
             setShowExplanation(false);
             setJustJumpedStep(null);
+            setConfidence(null);
         } else {
             setQuizCompleted(true);
             onComplete(score);
@@ -209,25 +233,56 @@ export default function Quiz({ topic, onComplete, steps, onGotoStep }: QuizProps
             )}
 
             <div className="space-y-3">
-                {q.options.map((option, idx) => (
-                    <button
-                        key={idx}
-                        onClick={() => handleOptionClick(option)}
-                        disabled={!!selectedOption}
-                        className={`w-full text-left p-4 rounded-lg border transition-all duration-200
-              ${selectedOption === option
-                                ? option === correct
-                                    ? "bg-green-500/20 border-green-500 text-green-200"
-                                    : "bg-red-500/20 border-red-500 text-red-200"
-                                : "bg-white/5 border-white/10 text-gray-300 hover:bg-white/10"
-                            }
-              ${selectedOption && option === correct ? "bg-green-500/20 border-green-500 text-green-200" : ""}
-            `}
-                    >
-                        {option}
-                    </button>
-                ))}
+                {q.options.map((option, idx) => {
+                    const isSelected = selectedOption === option;
+                    const isCorrectOption = option === correct;
+                    // Right/wrong coloring is withheld until locked in via a
+                    // confidence pill — revealing it on mere selection would let
+                    // students read the answer off the highlight color instead
+                    // of committing to how sure they actually are.
+                    let colorClasses = "bg-white/5 border-white/10 text-gray-300 hover:bg-white/10";
+                    if (showExplanation) {
+                        if (isCorrectOption) {
+                            colorClasses = "bg-green-500/20 border-green-500 text-green-200";
+                        } else if (isSelected) {
+                            colorClasses = "bg-red-500/20 border-red-500 text-red-200";
+                        }
+                    } else if (isSelected) {
+                        colorClasses = "bg-blue-500/10 border-blue-400 text-blue-200";
+                    }
+                    return (
+                        <button
+                            key={idx}
+                            onClick={() => handleSelectOption(option)}
+                            disabled={showExplanation}
+                            className={`w-full text-left p-4 rounded-lg border transition-all duration-200 ${colorClasses}`}
+                        >
+                            {option}
+                        </button>
+                    );
+                })}
             </div>
+
+            {selectedOption && !showExplanation && (
+                <div className="mt-4">
+                    {currentQuestion === 0 && (
+                        <p className="text-xs text-gray-500 mb-2">
+                            How sure are you? This shapes your feedback.
+                        </p>
+                    )}
+                    <div className="flex gap-2">
+                        {(Object.keys(CONFIDENCE_LABELS) as Confidence[]).map((level) => (
+                            <button
+                                key={level}
+                                onClick={() => handleConfirmConfidence(level)}
+                                className="flex-1 px-3 py-2 rounded-lg border border-white/15 bg-white/5 text-sm text-gray-300 hover:bg-white/10 hover:border-white/30 transition-colors"
+                            >
+                                {CONFIDENCE_LABELS[level]}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {showExplanation && (
                 <div className="mt-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">

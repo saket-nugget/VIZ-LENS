@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { logEvent } from "./logEvent";
 
 export type StepInfo = { n: number; label: string };
 
@@ -11,16 +12,6 @@ export type StepInfo = { n: number; label: string };
 // that never reaches "final step." Tune based on quiz_unreachable_fallback
 // telemetry once real sessions are observed.
 export const RECOVERY_TIMEOUT_MS = 3 * 60 * 1000;
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3000";
-
-function logEvent(name: string, payload: Record<string, unknown> = {}) {
-  fetch(`${API_BASE_URL}/api/event`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, payload }),
-  }).catch(() => {}); // telemetry only — never let this affect the UI
-}
 
 export interface VizBridge {
   quizUnlocked: boolean;
