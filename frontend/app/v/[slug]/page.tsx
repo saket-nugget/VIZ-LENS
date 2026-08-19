@@ -145,6 +145,7 @@ export default function SharedVizPage() {
                 topic={query}
                 steps={bridge.steps}
                 onGotoStep={bridge.gotoStep}
+                bridgeAvailable={bridge.bridgeAvailable}
                 onComplete={(score) => {
                   updateQuizScore(params.slug, score);
                   setShowJudge(true);

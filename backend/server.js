@@ -486,6 +486,99 @@ OUTPUT JSON SCHEMA:
     }
 });
 
+const CONFIDENCE_DESCRIPTIONS = {
+    guess: 'a guess',
+    fairly_sure: 'fairly confident',
+    certain: 'completely certain',
+};
+
+function buildRecapPrompt({ topic, missed, candidateSteps }) {
+    const missedBlock = missed.map((a, i) => {
+        const confidenceText = a.confidence ? CONFIDENCE_DESCRIPTIONS[a.confidence] || 'confidence unknown' : 'confidence unknown';
+        const stepLine = typeof a.step === 'number' ? `\n   Tied to viz step: ${a.step}` : '';
+        return `${i + 1}. Question: ${a.question}
+   Chosen: "${a.chosen}" (the student was ${confidenceText})
+   Correct answer: "${a.correct}"${stepLine}`;
+    }).join('\n');
+
+    const stepInstruction = candidateSteps.length > 0
+        ? `If rewatching one specific step would help the student see their mistake, set
+"rewatch_step" to ONE of these exact numbers: ${candidateSteps.join(', ')}. Otherwise
+set "rewatch_step" to null.`
+        : `No step data is available for these questions — set "rewatch_step" to null.`;
+
+    return `Role: You are the VIZ-LENS Learning Coach. A student just finished a quiz on
+"${topic}" and missed ${missed.length} question(s).
+
+MISSED QUESTIONS:
+${missedBlock}
+
+TASK:
+Find the ONE underlying pattern connecting these misses — not a list of separate
+mistakes, a single root misconception. Weight questions the student was CERTAIN
+about but still got wrong most heavily — those reveal an actual wrong belief, not
+just a gap. A question they only GUESSED at and got wrong is weaker evidence of any
+specific misconception; do not build the diagnosis primarily around a guess if a
+certain-and-wrong question is available instead.
+
+${stepInstruction}
+
+OUTPUT — STRICT JSON ONLY (no markdown, no commentary):
+{
+  "misconception": "the underlying pattern, 1 sentence, plain language, no jargon",
+  "evidence": "which missed question(s) show this, 1 short sentence",
+  "one_liner": "a punchy 1-sentence diagnosis to show the student directly, <= 160 chars",
+  "rewatch_step": number or null
+}`;
+}
+
+// Quiz-miss recap: diagnoses the PATTERN across a student's missed questions
+// instead of leaving them with disconnected per-question explanations.
+app.post('/api/recap', async (req, res) => {
+    try {
+        const { topic, missed } = req.body;
+
+        if (!topic || !Array.isArray(missed) || missed.length === 0) {
+            return res.status(400).json({ error: "Topic and at least one missed question are required" });
+        }
+
+        // Only steps actually tied to a missed question are valid rewatch
+        // targets — rewatching an unrelated step wouldn't address anything the
+        // student got wrong. Deduplicated, matches C4's membership-check
+        // discipline (never a numeric range: step numbering is not guaranteed
+        // to start at 1 or be contiguous).
+        const candidateSteps = [...new Set(missed.map((a) => a.step).filter((s) => typeof s === 'number'))];
+
+        const response = await generateWithRetry(
+            JSON_MODEL,
+            buildRecapPrompt({ topic, missed, candidateSteps }),
+            { responseMimeType: 'application/json' }
+        );
+        const text = extractResponseText(response)
+            .replace(/```json/g, '').replace(/```/g, '').trim();
+        const parsed = JSON.parse(text);
+
+        const candidateStepSet = new Set(candidateSteps);
+        const rewatch_step = typeof parsed.rewatch_step === 'number' && candidateStepSet.has(parsed.rewatch_step)
+            ? parsed.rewatch_step
+            : null;
+
+        res.json({
+            misconception: typeof parsed.misconception === 'string' ? parsed.misconception : '',
+            evidence: typeof parsed.evidence === 'string' ? parsed.evidence : '',
+            one_liner: typeof parsed.one_liner === 'string' ? parsed.one_liner : '',
+            rewatch_step,
+        });
+
+    } catch (error) {
+        console.error("Recap API Error:", error);
+        if (error.status === 429 || (error.message && (error.message.includes('429') || error.message.includes('quota') || error.message.includes('exhausted')))) {
+            return res.status(429).json({ error: "Gemini API Quota Exceeded", details: error.message });
+        }
+        res.status(500).json({ error: "Failed to generate recap", details: error.message });
+    }
+});
+
 // Judge/Compiler Route
 // Collapses all whitespace (including newlines) to single spaces before
 // substring matching, so indentation/line-break differences between the

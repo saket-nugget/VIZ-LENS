@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import type { StepInfo } from "../lib/useVizBridge";
 import { logEvent } from "../lib/logEvent";
+import MisconceptionCard, { type RecapResult } from "./MisconceptionCard";
 
 type Confidence = "guess" | "fairly_sure" | "certain";
 
@@ -20,6 +21,22 @@ interface Question {
     explanation: string;
     optionFeedback?: Record<string, string>; // per-option "why right/wrong"
     step?: number | null;                    // anchors this question to a viz step
+}
+
+// One graded answer, kept for the whole quiz so the results screen can
+// diagnose a PATTERN across misses, not just report a score.
+interface Answer {
+    question: string;
+    chosen: string;
+    correct: string;
+    explanation: string;
+    wasCorrect: boolean;
+    confidence: Confidence;
+    step: number | null;
+}
+
+function explanationFor(q: Question, chosen: string | null): string {
+    return (chosen && q.optionFeedback?.[chosen]) || q.explanation;
 }
 
 function shuffleArray<T>(items: T[]): T[] {
@@ -71,9 +88,10 @@ interface QuizProps {
     onComplete: (score: number) => void;
     steps?: StepInfo[];             // this viz's real step manifest, if known
     onGotoStep?: (n: number) => void; // jumps the viz to a specific step
+    bridgeAvailable?: boolean;      // whether rewatch is meaningful to offer
 }
 
-export default function Quiz({ topic, onComplete, steps, onGotoStep }: QuizProps) {
+export default function Quiz({ topic, onComplete, steps, onGotoStep, bridgeAvailable = false }: QuizProps) {
     const [questions, setQuestions] = useState<Question[]>([]);
     const [loading, setLoading] = useState(true);
     const [currentQuestion, setCurrentQuestion] = useState(0);
@@ -83,6 +101,10 @@ export default function Quiz({ topic, onComplete, steps, onGotoStep }: QuizProps
     const [quizCompleted, setQuizCompleted] = useState(false);
     const [justJumpedStep, setJustJumpedStep] = useState<number | null>(null);
     const [confidence, setConfidence] = useState<Confidence | null>(null);
+    const [answers, setAnswers] = useState<Answer[]>([]);
+    const [recap, setRecap] = useState<RecapResult | null>(null);
+    const [recapLoading, setRecapLoading] = useState(false);
+    const recapFetchedRef = useRef(false);
 
     const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3000";
 
@@ -102,6 +124,10 @@ export default function Quiz({ topic, onComplete, steps, onGotoStep }: QuizProps
         setQuizCompleted(false);
         setJustJumpedStep(null);
         setConfidence(null);
+        setAnswers([]);
+        setRecap(null);
+        setRecapLoading(false);
+        recapFetchedRef.current = false;
 
         const fetchQuiz = async () => {
             try {
@@ -155,13 +181,25 @@ export default function Quiz({ topic, onComplete, steps, onGotoStep }: QuizProps
     // confident errors gamifies badly. The score is unaffected by
     // confidence; only the recorded telemetry (and later, the recap) uses it.
     const handleConfirmConfidence = (level: Confidence) => {
-        if (!selectedOption || showExplanation) return;
+        if (!selectedOption || showExplanation || correct === undefined) return;
         const wasCorrect = selectedOption === correct;
         setConfidence(level);
         setShowExplanation(true);
         if (wasCorrect) {
             setScore(score + 1);
         }
+        setAnswers((prev) => [
+            ...prev,
+            {
+                question: q.question,
+                chosen: selectedOption,
+                correct,
+                explanation: explanationFor(q, selectedOption),
+                wasCorrect,
+                confidence: level,
+                step: q.step ?? null,
+            },
+        ]);
         logEvent("confidence_recorded", { confidence: level, wasCorrect });
     };
 
@@ -176,6 +214,44 @@ export default function Quiz({ topic, onComplete, steps, onGotoStep }: QuizProps
             setQuizCompleted(true);
             onComplete(score);
         }
+    };
+
+    // Fires once the quiz completes, if there's anything to diagnose. The
+    // score screen below renders immediately regardless — this is a
+    // best-effort enhancement layered on top, never a blocker.
+    useEffect(() => {
+        if (!quizCompleted || recapFetchedRef.current) return;
+        const missed = answers.filter((a) => !a.wasCorrect);
+        if (missed.length === 0) return; // clean sweep — nothing to diagnose
+        recapFetchedRef.current = true;
+        setRecapLoading(true);
+
+        const fetchRecap = async () => {
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/recap`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ topic, missed }),
+                });
+                const data = await res.json();
+                if (data && typeof data.misconception === "string") {
+                    setRecap(data);
+                    logEvent("recap_shown", {});
+                }
+            } catch (error) {
+                console.error("Failed to load recap", error);
+                // Silent degrade — no card is shown, the score screen still works.
+            } finally {
+                setRecapLoading(false);
+            }
+        };
+
+        fetchRecap();
+    }, [quizCompleted, answers, topic]);
+
+    const handleRewatch = (step: number) => {
+        logEvent("rewatch_clicked", { step });
+        onGotoStep?.(step);
     };
 
     if (loading) return <div className="text-white animate-pulse">Loading Quiz...</div>;
@@ -193,12 +269,25 @@ export default function Quiz({ topic, onComplete, steps, onGotoStep }: QuizProps
     }
 
     if (quizCompleted) {
+        const missedCount = answers.filter((a) => !a.wasCorrect).length;
         return (
             <div className="bg-white/5 p-6 rounded-xl border border-white/10 text-center">
                 <h3 className="text-2xl font-bold text-white mb-4">Quiz Completed! 🎉</h3>
                 <p className="text-gray-300 mb-4">
                     You scored {score} out of {questions.length}
                 </p>
+                {missedCount === 0 ? (
+                    <div className="mb-4 p-4 rounded-xl border border-green-500/30 bg-green-500/10 text-green-300 text-sm font-medium">
+                        Clean sweep — try the code challenge →
+                    </div>
+                ) : (
+                    <MisconceptionCard
+                        loading={recapLoading}
+                        recap={recap}
+                        bridgeAvailable={bridgeAvailable}
+                        onRewatch={handleRewatch}
+                    />
+                )}
                 <button
                     onClick={() => onComplete(score)}
                     className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
@@ -288,7 +377,7 @@ export default function Quiz({ topic, onComplete, steps, onGotoStep }: QuizProps
                 <div className="mt-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
                     <p className="text-blue-200 text-sm">
                         <span className="font-bold">Explanation:</span>{" "}
-                        {(selectedOption && q.optionFeedback?.[selectedOption]) || q.explanation}
+                        {explanationFor(q, selectedOption)}
                     </p>
                     <div className="mt-4 flex justify-end">
                         <button

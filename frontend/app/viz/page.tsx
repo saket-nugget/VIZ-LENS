@@ -251,6 +251,7 @@ function VizContent() {
               topic={query}
               steps={bridge.steps}
               onGotoStep={bridge.gotoStep}
+              bridgeAvailable={bridge.bridgeAvailable}
               onComplete={(score) => {
                 if (slug) updateQuizScore(slug, score);
                 setShowJudge(true);
