@@ -3,17 +3,31 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { BookOpen, Database, ArrowRight, Search, Upload, Library } from "lucide-react";
+import { BookOpen, Database, ArrowRight, Search, Upload, Library, Plus, ChevronDown } from "lucide-react";
+import { PENDING_CONTEXT_KEY } from "./lib/pendingContext";
+
+const CONTEXT_MAX_CHARS = 4000;
 
 export default function Home() {
   const router = useRouter();
   const [topic, setTopic] = useState("");
   const [isHoveredConcept, setIsHoveredConcept] = useState(false);
   const [isHoveredData, setIsHoveredData] = useState(false);
+  const [showContextBox, setShowContextBox] = useState(false);
+  const [contextInput, setContextInput] = useState("");
 
   const handleConceptSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (topic.trim()) {
+      const trimmedContext = contextInput.trim();
+      if (trimmedContext) {
+        try {
+          sessionStorage.setItem(PENDING_CONTEXT_KEY, trimmedContext);
+        } catch {
+          // Storage blocked (privacy settings, quota) — generation still
+          // works, just without grounding. Never block the search over this.
+        }
+      }
       router.push(`/viz?q=${encodeURIComponent(topic)}`);
     }
   };
@@ -94,6 +108,36 @@ export default function Home() {
               <Search size={18} />
             </button>
           </form>
+
+          <div className="w-full mt-4 text-left">
+            <button
+              type="button"
+              onClick={() => setShowContextBox((v) => !v)}
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+            >
+              {showContextBox ? <ChevronDown size={14} /> : <Plus size={14} />}
+              Ground this in your notes — optional
+            </button>
+            {showContextBox && (
+              <div className="mt-3">
+                <textarea
+                  value={contextInput}
+                  onChange={(e) => setContextInput(e.target.value.slice(0, CONTEXT_MAX_CHARS))}
+                  placeholder="Paste your professor's notation, example graph, problem statement..."
+                  rows={4}
+                  className="w-full bg-[#0f1218] border border-white/20 rounded-xl p-3 text-sm text-gray-200 placeholder:text-gray-600 font-mono focus:border-blue-500 outline-none transition-all resize-none"
+                />
+                <div className="flex justify-between items-center mt-1.5">
+                  <p className="text-[11px] text-gray-600">
+                    We&apos;ll match your professor&apos;s notation. Your notes aren&apos;t stored.
+                  </p>
+                  <span className="text-[11px] text-gray-600 flex-shrink-0 ml-2">
+                    {contextInput.length}/{CONTEXT_MAX_CHARS}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
 
           <div className="mt-8 flex flex-wrap justify-center gap-2">
             {['BFS', 'Solar System', 'QuickSort'].map(tag => (

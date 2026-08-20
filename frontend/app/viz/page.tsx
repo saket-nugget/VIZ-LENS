@@ -10,6 +10,7 @@ import { ArrowLeft, Search, BookOpen, Share2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { addToLibrary, updateQuizScore } from "../lib/library";
 import { useVizBridge } from "../lib/useVizBridge";
+import { PENDING_CONTEXT_KEY } from "../lib/pendingContext";
 
 function LoadingState() {
   return (
@@ -77,11 +78,23 @@ function VizContent() {
     setSlug(null); // Reset share state on new query
 
     const fetchVisualization = async () => {
+      // Read-once handoff from the home page's context box. Cleared
+      // immediately so it can never apply to a later, unrelated generation
+      // (a library replay, a share link, or a fresh search from this page's
+      // own search bar) — matches "your notes aren't stored."
+      let context: string | undefined;
+      try {
+        context = sessionStorage.getItem(PENDING_CONTEXT_KEY) || undefined;
+        if (context) sessionStorage.removeItem(PENDING_CONTEXT_KEY);
+      } catch {
+        // Storage blocked — generation still proceeds without grounding.
+      }
+
       try {
         const response = await fetch(`${API_BASE_URL}/api/generate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query }),
+          body: JSON.stringify(context ? { query, context } : { query }),
         });
 
         const data = await response.json();
