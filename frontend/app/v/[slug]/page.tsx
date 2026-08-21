@@ -5,9 +5,10 @@ import { useRouter, useParams } from "next/navigation";
 import Visualizer from "../../components/visualizer";
 import Quiz from "../../components/Quiz";
 import CodeJudge from "../../components/CodeJudge";
+import QuizGate from "../../components/QuizGate";
 import { BookOpen, Share2 } from "lucide-react";
 import { readLibrary, addToLibrary, updateQuizScore } from "../../lib/library";
-import { useStartQuizListener } from "../../lib/useStartQuizListener";
+import { useVizBridge } from "../../lib/useVizBridge";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3000";
 
@@ -25,7 +26,7 @@ export default function SharedVizPage() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useStartQuizListener(iframeRef, quizRef);
+  const bridge = useVizBridge(iframeRef, quizRef);
 
   const showToast = (message: string, ms: number) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -131,17 +132,29 @@ export default function SharedVizPage() {
 
       {query && (
         <div ref={quizRef} className="container mx-auto px-4 pb-20">
-          {!showJudge ? (
-            <Quiz
-              topic={query}
-              onComplete={(score) => {
-                updateQuizScore(params.slug, score);
-                setShowJudge(true);
-              }}
-            />
-          ) : (
-            <CodeJudge topic={query} />
-          )}
+          <QuizGate
+            unlocked={bridge.quizUnlocked}
+            bridgeAvailable={bridge.bridgeAvailable}
+            currentStep={bridge.currentStep}
+            totalSteps={bridge.totalSteps}
+            showRecovery={bridge.showRecoveryAffordance}
+            onRecoveryClick={bridge.unlockQuiz}
+          >
+            {!showJudge ? (
+              <Quiz
+                topic={query}
+                steps={bridge.steps}
+                onGotoStep={bridge.gotoStep}
+                bridgeAvailable={bridge.bridgeAvailable}
+                onComplete={(score) => {
+                  updateQuizScore(params.slug, score);
+                  setShowJudge(true);
+                }}
+              />
+            ) : (
+              <CodeJudge topic={query} />
+            )}
+          </QuizGate>
         </div>
       )}
     </div>

@@ -1,19 +1,67 @@
 "use client";
 
-import { useState } from "react";
-import Editor from "@monaco-editor/react";
+import { useRef, useState } from "react";
+import Editor, { type Monaco, type OnMount } from "@monaco-editor/react";
+import type { editor as MonacoEditorNS } from "monaco-editor";
+
+interface JudgeResult {
+    error_line: number;
+    reason?: string;
+    visual_reference?: string;
+    offending_code?: string;
+    confidence?: "high" | "low";
+}
 
 interface JudgeProps {
     topic: string;
 }
 
+const JUDGE_MARKER_OWNER = "viz-lens-judge";
+
 export default function CodeJudge({ topic }: JudgeProps) {
     const [code, setCode] = useState("// Write your implementation here...");
     const [language, setLanguage] = useState("javascript");
-    const [result, setResult] = useState<any>(null);
+    const [result, setResult] = useState<JudgeResult | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [isSkipped, setIsSkipped] = useState(false);
+
+    const editorRef = useRef<MonacoEditorNS.IStandaloneCodeEditor | null>(null);
+    const monacoRef = useRef<Monaco | null>(null);
+
+    const handleEditorMount: OnMount = (editorInstance, monacoInstance) => {
+        editorRef.current = editorInstance;
+        monacoRef.current = monacoInstance;
+    };
+
+    const clearMarkers = () => {
+        const editor = editorRef.current;
+        const monacoInstance = monacoRef.current;
+        if (!editor || !monacoInstance) return;
+        const model = editor.getModel();
+        if (model) monacoInstance.editor.setModelMarkers(model, JUDGE_MARKER_OWNER, []);
+    };
+
+    const highlightErrorLine = (line: number, message: string) => {
+        const editor = editorRef.current;
+        const monacoInstance = monacoRef.current;
+        if (!editor || !monacoInstance || line < 1) return;
+        const model = editor.getModel();
+        if (!model) return;
+        const lineCount = model.getLineCount();
+        const safeLine = Math.min(line, lineCount);
+        monacoInstance.editor.setModelMarkers(model, JUDGE_MARKER_OWNER, [
+            {
+                startLineNumber: safeLine,
+                startColumn: 1,
+                endLineNumber: safeLine,
+                endColumn: model.getLineMaxColumn(safeLine),
+                message,
+                severity: monacoInstance.MarkerSeverity.Error,
+            },
+        ]);
+        editor.revealLineInCenter(safeLine);
+    };
 
     if (isSkipped) {
         return (
@@ -35,6 +83,7 @@ export default function CodeJudge({ topic }: JudgeProps) {
         setLoading(true);
         setResult(null);
         setError(null);
+        clearMarkers(); // stale from a previous submission
         try {
             const res = await fetch(`${API_BASE_URL}/api/judge`, {
                 method: "POST",
@@ -47,6 +96,9 @@ export default function CodeJudge({ topic }: JudgeProps) {
                 setError(data.error);
             } else {
                 setResult(data.result);
+                if (data.result?.error_line > 0) {
+                    highlightErrorLine(data.result.error_line, data.result.reason || "Logic issue detected here");
+                }
             }
         } catch (error) {
             console.error("Judge failed", error);
@@ -96,7 +148,11 @@ export default function CodeJudge({ topic }: JudgeProps) {
                     language={language}
                     theme="vs-dark"
                     value={code}
-                    onChange={(value) => setCode(value || "")}
+                    onMount={handleEditorMount}
+                    onChange={(value) => {
+                        setCode(value || "");
+                        clearMarkers(); // the flagged line may no longer exist once edited
+                    }}
                     options={{
                         minimap: { enabled: false },
                         fontSize: 14,
@@ -136,8 +192,23 @@ export default function CodeJudge({ topic }: JudgeProps) {
                             {result.error_line === 0 ? "✅" : "❌"}
                         </div>
                         <h4 className={`text-lg font-bold ${result.error_line === 0 ? "text-green-400" : "text-red-400"}`}>
-                            {result.error_line === 0 ? "Logic Passed!" : `Logic Error Detected`}
+                            {result.error_line === 0 ? "Logic Passed!" : "Logic Error Detected"}
                         </h4>
+                        {result.error_line > 0 && result.confidence && (
+                            <span
+                                className={`text-xs font-semibold px-2 py-1 rounded-full border ${result.confidence === "high"
+                                        ? "bg-red-500/20 border-red-500/40 text-red-300"
+                                        : "bg-amber-500/20 border-amber-500/40 text-amber-300"
+                                    }`}
+                                title={
+                                    result.confidence === "high"
+                                        ? "The judge quoted this exact line from your code"
+                                        : "The judge couldn't verify it quoted your actual code — treat this as a hint, not a certainty"
+                                }
+                            >
+                                {result.confidence === "high" ? "Error found" : "Possible issue"}
+                            </span>
+                        )}
                     </div>
 
                     {result.error_line > 0 && (

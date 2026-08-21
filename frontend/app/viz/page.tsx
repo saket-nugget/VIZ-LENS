@@ -5,10 +5,12 @@ import { useEffect, useState, useRef, Suspense } from "react";
 import Visualizer from "../components/visualizer";
 import Quiz from "../components/Quiz";
 import CodeJudge from "../components/CodeJudge";
+import QuizGate from "../components/QuizGate";
 import { ArrowLeft, Search, BookOpen, Share2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { addToLibrary, updateQuizScore } from "../lib/library";
-import { useStartQuizListener } from "../lib/useStartQuizListener";
+import { useVizBridge } from "../lib/useVizBridge";
+import { PENDING_CONTEXT_KEY } from "../lib/pendingContext";
 
 function LoadingState() {
   return (
@@ -37,7 +39,7 @@ function VizContent() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useStartQuizListener(iframeRef, quizRef);
+  const bridge = useVizBridge(iframeRef, quizRef);
 
   const showToast = (message: string, ms: number) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -76,11 +78,23 @@ function VizContent() {
     setSlug(null); // Reset share state on new query
 
     const fetchVisualization = async () => {
+      // Read-once handoff from the home page's context box. Cleared
+      // immediately so it can never apply to a later, unrelated generation
+      // (a library replay, a share link, or a fresh search from this page's
+      // own search bar) — matches "your notes aren't stored."
+      let context: string | undefined;
+      try {
+        context = sessionStorage.getItem(PENDING_CONTEXT_KEY) || undefined;
+        if (context) sessionStorage.removeItem(PENDING_CONTEXT_KEY);
+      } catch {
+        // Storage blocked — generation still proceeds without grounding.
+      }
+
       try {
         const response = await fetch(`${API_BASE_URL}/api/generate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query }),
+          body: JSON.stringify(context ? { query, context } : { query }),
         });
 
         const data = await response.json();
@@ -237,17 +251,29 @@ function VizContent() {
       <Visualizer html={html} ref={iframeRef} />
 
       <div ref={quizRef} className="container mx-auto px-4 pb-20">
-        {!showJudge ? (
-          <Quiz
-            topic={query}
-            onComplete={(score) => {
-              if (slug) updateQuizScore(slug, score);
-              setShowJudge(true);
-            }}
-          />
-        ) : (
-          <CodeJudge topic={query} />
-        )}
+        <QuizGate
+          unlocked={bridge.quizUnlocked}
+          bridgeAvailable={bridge.bridgeAvailable}
+          currentStep={bridge.currentStep}
+          totalSteps={bridge.totalSteps}
+          showRecovery={bridge.showRecoveryAffordance}
+          onRecoveryClick={bridge.unlockQuiz}
+        >
+          {!showJudge ? (
+            <Quiz
+              topic={query}
+              steps={bridge.steps}
+              onGotoStep={bridge.gotoStep}
+              bridgeAvailable={bridge.bridgeAvailable}
+              onComplete={(score) => {
+                if (slug) updateQuizScore(slug, score);
+                setShowJudge(true);
+              }}
+            />
+          ) : (
+            <CodeJudge topic={query} />
+          )}
+        </QuizGate>
       </div>
     </div>
   );
