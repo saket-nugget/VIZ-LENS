@@ -596,6 +596,79 @@ app.post('/api/recap', async (req, res) => {
     }
 });
 
+// Explain-it-back: a diagnostic, never-gating check of the student's own
+// understanding. No score, no pass/fail — free-text grading is where LLM
+// feedback gets weakest, and blocking progress on a subjective judgment
+// would sour the whole loop. Output is always framed as what a MORE
+// COMPLETE explanation would additionally mention, never as an error.
+app.post('/api/explain', async (req, res) => {
+    try {
+        const { topic, prompt_question, user_explanation } = req.body;
+
+        if (!topic || typeof user_explanation !== 'string' || !user_explanation.trim()) {
+            return res.status(400).json({ error: "Topic and an explanation are required" });
+        }
+
+        // Defense in depth: enforce a cap server-side too, same discipline as
+        // the C2 grounding context.
+        const explanation = user_explanation.trim().slice(0, 2000);
+        const question = typeof prompt_question === 'string' && prompt_question.trim()
+            ? prompt_question.trim()
+            : `Explain how ${topic} works, in your own words.`;
+
+        const explainPrompt = `Role: You are the VIZ-LENS Understanding Coach. A student was asked:
+"${question}"
+
+THE STUDENT'S EXPLANATION (about "${topic}"):
+${explanation}
+
+TASK:
+- Judge whether the explanation shows genuine understanding of the core mechanism, even
+  if imperfectly worded — do not penalize informal language or minor imprecision.
+- List up to 3 concepts a MORE COMPLETE explanation would ALSO mention. Give each as a
+  SHORT NEUTRAL PHRASE only (e.g. "the algorithm's stability", "in-place memory use") —
+  do NOT repeat framing like "a fuller explanation would cover" inside each item, the
+  surrounding UI already provides that framing. Never phrase an item as something the
+  student got wrong. If the explanation is already strong, return an empty list.
+- Write short, encouraging feedback in a warm teaching tone.
+
+RULES:
+- Output STRICT JSON ONLY (no markdown, no backticks, no extra text).
+- NEVER use the words "wrong", "incorrect", "fail", "error", or "score" anywhere in the
+  output — this is feedback, not a grade.
+- feedback <= 200 chars. Each missing_concepts entry is a short phrase, <= 60 chars.
+
+OUTPUT JSON SCHEMA:
+{
+  "understood": boolean,
+  "missing_concepts": ["string", ...],
+  "feedback": "string"
+}`;
+
+        const response = await generateWithRetry(JSON_MODEL, explainPrompt, {
+            responseMimeType: 'application/json'
+        });
+        const text = extractResponseText(response)
+            .replace(/```json/g, '').replace(/```/g, '').trim();
+        const parsed = JSON.parse(text);
+
+        res.json({
+            understood: Boolean(parsed.understood),
+            missing_concepts: Array.isArray(parsed.missing_concepts)
+                ? parsed.missing_concepts.filter((c) => typeof c === 'string').slice(0, 3)
+                : [],
+            feedback: typeof parsed.feedback === 'string' ? parsed.feedback : '',
+        });
+
+    } catch (error) {
+        console.error("Explain API Error:", error);
+        if (error.status === 429 || (error.message && (error.message.includes('429') || error.message.includes('quota') || error.message.includes('exhausted')))) {
+            return res.status(429).json({ error: "Gemini API Quota Exceeded", details: error.message });
+        }
+        res.status(500).json({ error: "Failed to check explanation", details: error.message });
+    }
+});
+
 // Judge/Compiler Route
 // Collapses all whitespace (including newlines) to single spaces before
 // substring matching, so indentation/line-break differences between the
