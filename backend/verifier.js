@@ -43,6 +43,16 @@ function runStaticChecks(html) {
         fail('take-quiz-btn', 'Missing #take-quiz-btn element');
     }
 
+    // A required id appearing twice means the generated code stamped out its
+    // UI twice (seen live: two stacked copies, only the first one wired up —
+    // getElementById always binds the first match, leaving the second frozen).
+    for (const id of ['description-box', 'take-quiz-btn']) {
+        if (root.querySelectorAll(`#${id}`).length > 1) {
+            fail('duplicate-ui', `#${id} appears more than once — the UI was built twice; render it exactly once`);
+            break;
+        }
+    }
+
     const scripts = root.querySelectorAll('script');
     if (scripts.length === 0) {
         fail('script', 'No <script> block found');

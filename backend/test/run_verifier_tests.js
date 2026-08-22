@@ -50,6 +50,14 @@ async function main() {
         <button id="take-quiz-btn"></button>
         <script>const state = { steps: [] };</script></body></html>`;
     check('localStorage mentioned outside scripts passes', runStaticChecks(mentionsStorage).pass);
+
+    // Doubled UI: the whole interface stamped out twice (live photosynthesis bug)
+    const doubledUi = `<html><body>
+        <canvas></canvas><div id="description-box">copy one</div><button id="take-quiz-btn"></button>
+        <canvas></canvas><div id="description-box">copy two</div><button id="take-quiz-btn"></button>
+        <script>const x = 1;</script></body></html>`;
+    check('duplicated UI (repeated required ids) fails static checks',
+        runStaticChecks(doubledUi).failures.some(f => f.check === 'duplicate-ui'));
     const usesStorage = mentionsStorage.replace('const state = { steps: [] };', 'localStorage.setItem("k","v");');
     check('localStorage used inside a script still fails',
         runStaticChecks(usesStorage).failures.some(f => f.check === 'forbidden-storage'));
