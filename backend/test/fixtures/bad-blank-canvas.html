@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<body>
+  <canvas id="viz" width="400" height="200"></canvas>
+  <div id="description-box">Step 0: stats and text update, but nothing is ever drawn.</div>
+  <button id="next-btn">Next</button>
+  <button id="take-quiz-btn">Take the Quiz</button>
+  <script>
+    // Mimics the live blank-BFS bug: no errors thrown, description narrates
+    // each step, but the canvas draw routine is broken (never paints).
+    let i = 0;
+    document.getElementById("next-btn").onclick = () => {
+      i++;
+      document.getElementById("description-box").textContent = "Step " + i + ": moving to next in queue.";
+    };
+  </script>
+</body>
+</html>

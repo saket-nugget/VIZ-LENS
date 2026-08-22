@@ -95,6 +95,23 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const ERROR_CAPTURE_MS = 4000;
 const POST_CLICK_WAIT_MS = 500;
 
+// Counts painted (non-transparent) pixels across every canvas on the page,
+// sampling every 10th pixel. Runs inside page.evaluate.
+function countPaintedPixels() {
+    let painted = 0;
+    for (const canvas of document.querySelectorAll('canvas')) {
+        if (canvas.width === 0 || canvas.height === 0) continue; // dead buffer
+        try {
+            const data = canvas.getContext('2d')
+                .getImageData(0, 0, canvas.width, canvas.height).data;
+            for (let i = 3; i < data.length; i += 40) {
+                if (data[i] !== 0) painted++;
+            }
+        } catch { /* non-2d context — treat as unpainted */ }
+    }
+    return painted;
+}
+
 // Returns { pass: boolean, failures: [{ check, error }] }
 async function runSmokeTest(html) {
     await initBrowser();
@@ -114,6 +131,8 @@ async function runSmokeTest(html) {
             return { pass: false, failures: [{ check: 'runtime-load', error: errors.join('\n') }] };
         }
 
+        const paintedAtLoad = await page.evaluate(countPaintedPixels);
+
         // Find the "Next" step control: common ids first, then button text
         const clicked = await page.evaluate(() => {
             const byId = document.querySelector('#next-btn, #nextBtn, #next');
@@ -131,6 +150,21 @@ async function runSmokeTest(html) {
         await sleep(POST_CLICK_WAIT_MS);
         if (errors.length > 0) {
             return { pass: false, failures: [{ check: 'runtime-next', error: errors.join('\n') }] };
+        }
+
+        // A silently-blank canvas throws no errors but shows the user nothing.
+        // Fail only when NO canvas painted a single pixel at load AND after
+        // stepping — a working viz has drawn by then. (Per spec risk note,
+        // never fail on a mere frame-diff; zero-ever-painted is the bar.)
+        const paintedAfterClick = await page.evaluate(countPaintedPixels);
+        if (paintedAtLoad === 0 && paintedAfterClick === 0) {
+            return {
+                pass: false,
+                failures: [{
+                    check: 'runtime-blank-canvas',
+                    error: 'Canvas never painted any pixels, at load or after clicking Next — the visualization renders nothing',
+                }],
+            };
         }
 
         return { pass: true, failures: [] };

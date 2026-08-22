@@ -64,6 +64,14 @@ async function main() {
         !badSmoke.pass && badSmoke.failures.some(f => f.check === 'runtime-next'),
         JSON.stringify(badSmoke.failures));
 
+    // Silently-blank canvas: no errors, description updates, nothing drawn
+    check('bad-blank-canvas.html passes static checks',
+        runStaticChecks(fixture('bad-blank-canvas.html')).pass);
+    const blankSmoke = await runSmokeTest(fixture('bad-blank-canvas.html'));
+    check('bad-blank-canvas.html fails smoke test on never-painted canvas',
+        !blankSmoke.pass && blankSmoke.failures.some(f => f.check === 'runtime-blank-canvas'),
+        JSON.stringify(blankSmoke.failures));
+
     // --- Repair loop (mocked generate: "repairs" by returning the good fixture) ---
     console.log('Repair loop:');
     let repairPrompt = null;
