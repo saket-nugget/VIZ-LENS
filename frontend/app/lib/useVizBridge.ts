@@ -62,12 +62,13 @@ export function useVizBridge(
   const scrollToQuiz = useCallback(() => {
     const el = quizRef.current;
     if (!el) return;
-    const beforeY = window.scrollY;
     el.scrollIntoView({ behavior: "smooth" });
-    // Smooth scroll silently no-ops in some embedded Chromium contexts
-    setTimeout(() => {
-      if (window.scrollY === beforeY) el.scrollIntoView();
-    }, 400);
+    // Smooth scroll silently no-ops or stalls partway in some embedded
+    // Chromium contexts. Rather than trying to detect that precisely (an
+    // exact scrollY-unchanged check misses a scroll that started moving but
+    // never reached its target), just scroll again unconditionally — a
+    // no-op if the element is already in view, a real fix otherwise.
+    setTimeout(() => el.scrollIntoView({ behavior: "smooth" }), 500);
   }, [quizRef]);
 
   const unlockQuiz = useCallback(() => {
@@ -77,7 +78,9 @@ export function useVizBridge(
           loggedUnlockRef.current = true;
           logEvent("quiz_unlocked", {});
         }
-        setTimeout(scrollToQuiz, 50);
+        // Give React time to actually paint the unlocked (much taller) quiz
+        // layout before measuring where to scroll to.
+        setTimeout(scrollToQuiz, 150);
       }
       return true;
     });

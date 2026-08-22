@@ -212,8 +212,15 @@ export default function Quiz({ topic, onComplete, steps, onGotoStep, bridgeAvail
             setJustJumpedStep(null);
             setConfidence(null);
         } else {
+            // Only mark the quiz complete here — do NOT call onComplete(score)
+            // yet. onComplete tells the parent page to swap this component out
+            // for CodeJudge, and React batches that state update together with
+            // this one into a single render pass. Calling both here would
+            // unmount Quiz before its own results screen (score, recap,
+            // explain-it-back) ever paints — onComplete only fires from the
+            // "Proceed to Code Challenge" button below, once the user is
+            // actually done looking at the results.
             setQuizCompleted(true);
-            onComplete(score);
         }
     };
 

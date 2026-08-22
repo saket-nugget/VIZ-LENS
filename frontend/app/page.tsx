@@ -113,9 +113,9 @@ export default function Home() {
             <button
               type="button"
               onClick={() => setShowContextBox((v) => !v)}
-              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+              className="flex items-center gap-2 text-sm text-gray-400 hover:text-white px-3 py-2 -mx-3 rounded-lg hover:bg-white/5 transition-colors"
             >
-              {showContextBox ? <ChevronDown size={14} /> : <Plus size={14} />}
+              {showContextBox ? <ChevronDown size={16} /> : <Plus size={16} />}
               Ground this in your notes — optional
             </button>
             {showContextBox && (
