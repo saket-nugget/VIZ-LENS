@@ -139,7 +139,10 @@ export default function Home() {
             )}
           </div>
 
-          <div className="mt-8 flex flex-wrap justify-center gap-2">
+          {/* relative: keeps the chips above the card's hover-glow overlay,
+              which otherwise swallows clicks on static siblings (same bug as
+              the context toggle, fixed the same way) */}
+          <div className="relative mt-8 flex flex-wrap justify-center gap-2">
             {['BFS', 'Solar System', 'QuickSort'].map(tag => (
               <button
                 key={tag}

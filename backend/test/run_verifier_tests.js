@@ -50,6 +50,14 @@ async function main() {
         <button id="take-quiz-btn"></button>
         <script>const state = { steps: [] };</script></body></html>`;
     check('localStorage mentioned outside scripts passes', runStaticChecks(mentionsStorage).pass);
+
+    // Doubled UI: the whole interface stamped out twice (live photosynthesis bug)
+    const doubledUi = `<html><body>
+        <canvas></canvas><div id="description-box">copy one</div><button id="take-quiz-btn"></button>
+        <canvas></canvas><div id="description-box">copy two</div><button id="take-quiz-btn"></button>
+        <script>const x = 1;</script></body></html>`;
+    check('duplicated UI (repeated required ids) fails static checks',
+        runStaticChecks(doubledUi).failures.some(f => f.check === 'duplicate-ui'));
     const usesStorage = mentionsStorage.replace('const state = { steps: [] };', 'localStorage.setItem("k","v");');
     check('localStorage used inside a script still fails',
         runStaticChecks(usesStorage).failures.some(f => f.check === 'forbidden-storage'));
@@ -63,6 +71,14 @@ async function main() {
     check('bad-runtime-error.html fails smoke test on Next click',
         !badSmoke.pass && badSmoke.failures.some(f => f.check === 'runtime-next'),
         JSON.stringify(badSmoke.failures));
+
+    // Silently-blank canvas: no errors, description updates, nothing drawn
+    check('bad-blank-canvas.html passes static checks',
+        runStaticChecks(fixture('bad-blank-canvas.html')).pass);
+    const blankSmoke = await runSmokeTest(fixture('bad-blank-canvas.html'));
+    check('bad-blank-canvas.html fails smoke test on never-painted canvas',
+        !blankSmoke.pass && blankSmoke.failures.some(f => f.check === 'runtime-blank-canvas'),
+        JSON.stringify(blankSmoke.failures));
 
     // --- Repair loop (mocked generate: "repairs" by returning the good fixture) ---
     console.log('Repair loop:');
