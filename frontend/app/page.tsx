@@ -109,7 +109,7 @@ export default function Home() {
             </button>
           </form>
 
-          <div className="w-full mt-4 text-left">
+          <div className="relative w-full mt-4 text-left">
             <button
               type="button"
               onClick={() => setShowContextBox((v) => !v)}
