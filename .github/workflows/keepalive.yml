@@ -1,0 +1,32 @@
+# Keeps the free-tier infrastructure awake.
+#
+# Supabase pauses free projects after 7 idle days — and a paused database
+# silently disables share links, the library, and caching (the backend
+# degrades gracefully, so nothing errors; things just quietly stop being
+# saved). Render's free tier also sleeps idle services. One request a day
+# through the backend resets both clocks: the /api/viz lookup runs a real
+# Supabase query even for an unknown slug, so the expected 404 still counts
+# as database activity.
+#
+# Note: GitHub disables scheduled workflows in repos with no commits for
+# 60 days — this protects idle weeks, not abandoned projects.
+name: keepalive
+
+on:
+  schedule:
+    - cron: "17 3 * * *" # daily at 03:17 UTC (odd minute avoids peak congestion)
+  workflow_dispatch: {} # allows manual runs from the Actions tab
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend (404 expected — the DB lookup is the point)
+        run: |
+          code=$(curl -sS -o /dev/null -w "%{http_code}" \
+            --max-time 120 --retry 3 --retry-all-errors \
+            "https://viz-lens-backend.onrender.com/api/viz/keepalive")
+          echo "Backend answered with HTTP $code"
+          # Any HTTP answer means Render woke and the Supabase query ran.
+          # curl exits non-zero (failing this step) only if the backend was
+          # unreachable after retries — a red X here is the early warning.
